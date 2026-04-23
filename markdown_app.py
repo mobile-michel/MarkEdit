@@ -3,16 +3,17 @@
 
 import sys
 import os
+import re
 import tempfile
 
-from PyQt6.QtCore import Qt, QUrl, QMarginsF, QSize
+from PyQt6.QtCore import Qt, QUrl, QMarginsF, QSize, QTimer
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
     QTextCharFormat, QColor, QTextDocument,
 )
 from PyQt6.QtPdf import QPdfDocument
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QStackedWidget, QPlainTextEdit,
+    QApplication, QMainWindow, QSplitter, QPlainTextEdit,
     QFileDialog, QMessageBox, QToolBar, QStatusBar, QMenuBar,
     QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLabel, QCheckBox,
 )
@@ -117,6 +118,8 @@ pre code {
 """
     + _PYGMENTS_CSS
     + """
+.highlight .err { border: none; }
+
 
 /* --- Blockquotes --- */
 blockquote {
@@ -158,6 +161,17 @@ hr {
     border: none;
     border-top: 2px solid #e0e0e0;
     margin: 2em 0;
+}
+
+/* --- Cases à cocher (task lists) --- */
+ul.task-list { list-style: none; padding-left: 1.2em; }
+ul.task-list li { padding-left: 0; }
+ul.task-list input[type="checkbox"] {
+    margin-right: 0.5em;
+    pointer-events: none;
+    accent-color: #1a73e8;
+    width: 1em;
+    height: 1em;
 }
 
 /* --- Images --- */
@@ -234,6 +248,7 @@ class MarkdownApp(QMainWindow):
         self._current_css = DEFAULT_CSS
         self._custom_css_path = None
         self._modified = False
+        self._mode = "edit"
 
         self._setup_ui()
         self._setup_menus()
@@ -254,30 +269,36 @@ class MarkdownApp(QMainWindow):
     # -----------------------------------------------------------------------
 
     def _setup_ui(self):
-        self._stack = QStackedWidget()
-
-        # Index 0 : affichage
         self._web_view = QWebEngineView()
-        self._stack.addWidget(self._web_view)
 
-        # Index 1 : édition
         self._editor = QPlainTextEdit()
         self._editor.setTabStopDistance(32)
         font = self._editor.font()
         font.setFamily("Fira Code, Source Code Pro, Consolas, monospace")
         font.setPointSize(12)
         self._editor.setFont(font)
-        self._stack.addWidget(self._editor)
+
+        self._splitter = QSplitter(Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self._web_view)
+        self._splitter.addWidget(self._editor)
+        self._splitter.setStretchFactor(0, 1)
+        self._splitter.setStretchFactor(1, 1)
+
+        # Timer de rendu automatique en mode partagé
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.setInterval(300)
+        self._render_timer.timeout.connect(self._render)
 
         # Barre de recherche
         self._setup_search_bar()
 
-        # Widget central : stack + barre de recherche
+        # Widget central : splitter + barre de recherche
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._stack)
+        layout.addWidget(self._splitter)
         layout.addWidget(self._search_bar)
         self.setCentralWidget(central)
 
@@ -337,9 +358,15 @@ class MarkdownApp(QMainWindow):
         self._act_edit.setCheckable(True)
         view_menu.addAction(self._act_edit)
 
+        self._act_split = QAction("Mode &Partagé", self)
+        self._act_split.setShortcut(QKeySequence("F7"))
+        self._act_split.setCheckable(True)
+        view_menu.addAction(self._act_split)
+
         self._mode_group = QActionGroup(self)
         self._mode_group.addAction(self._act_view)
         self._mode_group.addAction(self._act_edit)
+        self._mode_group.addAction(self._act_split)
         self._mode_group.setExclusive(True)
 
         # --- Outils ---
@@ -367,6 +394,7 @@ class MarkdownApp(QMainWindow):
         tb.addSeparator()
         tb.addAction(self._act_view)
         tb.addAction(self._act_edit)
+        tb.addAction(self._act_split)
         tb.addSeparator()
         tb.addAction(self._act_load_css)
         tb.addAction(self._act_reset_css)
@@ -385,6 +413,7 @@ class MarkdownApp(QMainWindow):
 
         self._act_view.triggered.connect(lambda: self._switch_mode("view"))
         self._act_edit.triggered.connect(lambda: self._switch_mode("edit"))
+        self._act_split.triggered.connect(lambda: self._switch_mode("split"))
 
         self._act_load_css.triggered.connect(self._on_load_css)
         self._act_reset_css.triggered.connect(self._on_reset_css)
@@ -477,7 +506,7 @@ class MarkdownApp(QMainWindow):
             self._web_view.findText("")
             return
 
-        if self._stack.currentIndex() == 1:
+        if self._mode == "edit":
             # Mode édition
             self._find_all_in_editor(text)
         else:
@@ -527,7 +556,7 @@ class MarkdownApp(QMainWindow):
         if not self._search_input.text():
             return
 
-        if self._stack.currentIndex() == 1:
+        if self._mode == "edit":
             # Mode édition
             if not self._search_matches:
                 return
@@ -542,7 +571,7 @@ class MarkdownApp(QMainWindow):
         if not self._search_input.text():
             return
 
-        if self._stack.currentIndex() == 1:
+        if self._mode == "edit":
             # Mode édition
             if not self._search_matches:
                 return
@@ -597,6 +626,27 @@ class MarkdownApp(QMainWindow):
     # Rendu Markdown
     # -----------------------------------------------------------------------
 
+    @staticmethod
+    def _render_task_lists(html):
+        """Convertit [ ] / [x] dans les <li> en vraies cases à cocher HTML."""
+        html = re.sub(
+            r'<li>\[x\][ \t]',
+            '<li><input type="checkbox" checked> ',
+            html, flags=re.IGNORECASE,
+        )
+        html = re.sub(
+            r'<li>\[ \][ \t]',
+            '<li><input type="checkbox"> ',
+            html,
+        )
+        # Marquer les <ul> contenant des cases à cocher
+        html = re.sub(
+            r'<ul>\s*(<li><input type="checkbox")',
+            r'<ul class="task-list">\n\1',
+            html,
+        )
+        return html
+
     def _render(self):
         """Convertit le texte Markdown en HTML et l'affiche dans le QWebEngineView."""
         source = self._editor.toPlainText()
@@ -605,6 +655,7 @@ class MarkdownApp(QMainWindow):
             extension_configs=MARKDOWN_EXT_CONFIGS,
         )
         body = md.convert(source)
+        body = self._render_task_lists(body)
         html = HTML_TEMPLATE.format(css=self._current_css, body=body)
 
         base_url = QUrl("file:///")
@@ -617,16 +668,26 @@ class MarkdownApp(QMainWindow):
     # -----------------------------------------------------------------------
 
     def _switch_mode(self, mode):
+        self._mode = mode
         if mode == "view":
             self._render()
-            self._stack.setCurrentIndex(0)
+            self._web_view.setVisible(True)
+            self._editor.setVisible(False)
             self._act_view.setChecked(True)
             self._statusbar.showMessage("Mode : Affichage")
-        else:
-            self._stack.setCurrentIndex(1)
+        elif mode == "edit":
+            self._render_timer.stop()
+            self._web_view.setVisible(False)
+            self._editor.setVisible(True)
             self._act_edit.setChecked(True)
             self._statusbar.showMessage("Mode : Édition")
-        # Relancer la recherche dans le nouveau mode si la barre est visible
+        else:  # split
+            self._render()
+            self._web_view.setVisible(True)
+            self._editor.setVisible(True)
+            self._splitter.setSizes([500, 500])
+            self._act_split.setChecked(True)
+            self._statusbar.showMessage("Mode : Partagé")
         if self._search_bar.isVisible() and self._search_input.text():
             self._on_search_text_changed()
 
@@ -786,8 +847,6 @@ class MarkdownApp(QMainWindow):
             return
         self._custom_css_path = path
         self._render()
-        if self._stack.currentIndex() == 0:
-            pass  # render already switches display
         self._statusbar.showMessage(f"CSS chargé : {os.path.basename(path)}", 4000)
         self._update_title()
 
@@ -805,6 +864,8 @@ class MarkdownApp(QMainWindow):
     def _on_text_changed(self):
         if not self._modified:
             self._set_modified(True)
+        if self._mode == "split":
+            self._render_timer.start()
 
     def _set_modified(self, val):
         self._modified = val
