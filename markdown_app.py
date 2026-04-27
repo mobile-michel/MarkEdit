@@ -5,8 +5,10 @@ import sys
 import os
 import re
 import tempfile
+import subprocess
+from datetime import date
 
-from PyQt6.QtCore import Qt, QUrl, QMarginsF, QSize, QTimer
+from PyQt6.QtCore import Qt, QUrl, QMarginsF, QSize, QTimer, QSettings
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
     QTextCharFormat, QColor, QTextDocument,
@@ -16,6 +18,8 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QPlainTextEdit,
     QFileDialog, QMessageBox, QToolBar, QStatusBar, QMenuBar,
     QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLabel, QCheckBox,
+    QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox,
+    QFormLayout,
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -256,7 +260,7 @@ class MarkdownApp(QMainWindow):
         self._setup_statusbar()
         self._connect_signals()
 
-        self.resize(1000, 750)
+        self._restore_geometry()
         self._update_title()
 
         if file_path and os.path.isfile(file_path):
@@ -372,6 +376,16 @@ class MarkdownApp(QMainWindow):
         # --- Outils ---
         tools_menu = bar.addMenu("&Outils")
 
+        self._act_gen_metadata = QAction("&Générer les métadonnées…", self)
+        self._act_gen_metadata.setShortcut(QKeySequence("Ctrl+Shift+M"))
+        tools_menu.addAction(self._act_gen_metadata)
+
+        self._act_metadata = QAction("&Voir les métadonnées…", self)
+        self._act_metadata.setShortcut(QKeySequence("Ctrl+M"))
+        tools_menu.addAction(self._act_metadata)
+
+        tools_menu.addSeparator()
+
         self._act_load_css = QAction("&Charger CSS…", self)
         tools_menu.addAction(self._act_load_css)
 
@@ -396,6 +410,9 @@ class MarkdownApp(QMainWindow):
         tb.addAction(self._act_edit)
         tb.addAction(self._act_split)
         tb.addSeparator()
+        tb.addAction(self._act_gen_metadata)
+        tb.addAction(self._act_metadata)
+        tb.addSeparator()
         tb.addAction(self._act_load_css)
         tb.addAction(self._act_reset_css)
 
@@ -415,6 +432,8 @@ class MarkdownApp(QMainWindow):
         self._act_edit.triggered.connect(lambda: self._switch_mode("edit"))
         self._act_split.triggered.connect(lambda: self._switch_mode("split"))
 
+        self._act_gen_metadata.triggered.connect(self._on_generate_metadata)
+        self._act_metadata.triggered.connect(self._on_show_metadata)
         self._act_load_css.triggered.connect(self._on_load_css)
         self._act_reset_css.triggered.connect(self._on_reset_css)
 
@@ -829,6 +848,202 @@ class MarkdownApp(QMainWindow):
         self._statusbar.showMessage("Impression terminée.", 3000)
 
     # -----------------------------------------------------------------------
+    # Métadonnées
+    # -----------------------------------------------------------------------
+
+    def _default_author(self):
+        """Auteur depuis QSettings, puis git config, sinon chaîne vide."""
+        settings = QSettings("maillard.li", "MarkdownViewer")
+        saved = settings.value("lastAuthor", "")
+        if saved:
+            return saved
+        try:
+            result = subprocess.run(
+                ["git", "config", "user.name"],
+                capture_output=True, text=True, timeout=2,
+            )
+            return result.stdout.strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _strip_meta_block(text):
+        """Supprime le bloc de métadonnées en tête du texte s'il en existe un."""
+        lines = text.split("\n")
+        if not lines or not re.match(r"^\w[\w\s]*\s*:", lines[0]):
+            return text
+        for i, line in enumerate(lines):
+            if not line.strip():
+                return "\n".join(lines[i + 1:])
+        return text
+
+    def _on_generate_metadata(self):
+        # Lire les métadonnées existantes pour pré-remplir
+        source = self._editor.toPlainText()
+        md_parser = markdown.Markdown(extensions=["meta"])
+        md_parser.convert(source)
+        existing = md_parser.Meta  # {clé: [valeurs]}
+
+        def _get(key, default=""):
+            vals = existing.get(key, [])
+            return ", ".join(v.strip() for v in vals) if vals else default
+
+        # Valeurs par défaut
+        if self._current_file:
+            base = os.path.splitext(os.path.basename(self._current_file))[0]
+            default_title = base.replace("-", " ").replace("_", " ").title()
+        else:
+            default_title = ""
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Générer les métadonnées")
+        dlg.setMinimumWidth(440)
+
+        vl = QVBoxLayout(dlg)
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        vl.addLayout(form)
+
+        # Date de création : métadonnée existante > date du fichier > aujourd'hui
+        default_created = date.today().isoformat()
+        if self._current_file and os.path.exists(self._current_file):
+            mtime = os.path.getmtime(self._current_file)
+            from datetime import datetime
+            default_created = datetime.fromtimestamp(mtime).date().isoformat()
+
+        f_title = QLineEdit(_get("title", default_title))
+        f_author = QLineEdit(_get("author", self._default_author()))
+        f_created = QLineEdit(_get("created", default_created))
+        f_updated = QLineEdit(_get("updated", date.today().isoformat()))
+        f_tags = QLineEdit(_get("tags"))
+        f_tags.setPlaceholderText("tag1, tag2, tag3")
+        f_description = QLineEdit(_get("description"))
+        f_description.setPlaceholderText("(optionnel)")
+
+        form.addRow("Titre :", f_title)
+        form.addRow("Auteur :", f_author)
+        form.addRow("Créé le :", f_created)
+        form.addRow("Mis à jour le :", f_updated)
+        form.addRow("Tags :", f_tags)
+        form.addRow("Description :", f_description)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        vl.addWidget(buttons)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        # Mémoriser l'auteur
+        author_val = f_author.text().strip()
+        if author_val:
+            QSettings("maillard.li", "MarkdownViewer").setValue("lastAuthor", author_val)
+
+        # Construire le bloc meta
+        fields = [
+            ("Title", f_title.text().strip()),
+            ("Author", author_val),
+            ("Created", f_created.text().strip()),
+            ("Updated", f_updated.text().strip()),
+            ("Tags", f_tags.text().strip()),
+            ("Description", f_description.text().strip()),
+        ]
+        meta_lines = [f"{k}: {v}" for k, v in fields if v]
+        if not meta_lines:
+            return
+        meta_block = "\n".join(meta_lines) + "\n\n"
+
+        # Remplacer ou insérer en tête
+        body = self._strip_meta_block(source)
+        self._editor.setPlainText(meta_block + body)
+        self._statusbar.showMessage("Métadonnées insérées.", 3000)
+
+    @staticmethod
+    def _split_meta_values(values):
+        """Retourne une liste de tokens à partir des valeurs brutes de l'extension meta.
+
+        L'extension meta renvoie toujours une liste de chaînes. Quand l'utilisateur
+        écrit « Tags: a, b, c » sur une seule ligne, on obtient ['a, b, c'] ; on
+        normalise en éclatant sur la virgule.
+        """
+        tokens = []
+        for v in values:
+            tokens.extend(t.strip() for t in v.split(",") if t.strip())
+        return tokens
+
+    @staticmethod
+    def _make_badge_widget(tokens):
+        """Crée un QWidget contenant un badge coloré par token."""
+        container = QWidget()
+        container.setAutoFillBackground(False)
+        hl = QHBoxLayout(container)
+        hl.setContentsMargins(4, 4, 4, 4)
+        hl.setSpacing(6)
+        for token in tokens:
+            badge = QLabel(token)
+            badge.setStyleSheet(
+                "QLabel {"
+                "  background: #e0e7ff;"
+                "  color: #3730a3;"
+                "  border-radius: 10px;"
+                "  padding: 2px 10px;"
+                "  font-size: 11px;"
+                "  font-weight: 600;"
+                "}"
+            )
+            hl.addWidget(badge)
+        hl.addStretch()
+        return container
+
+    def _on_show_metadata(self):
+        source = self._editor.toPlainText()
+        md = markdown.Markdown(extensions=["meta"])
+        md.convert(source)
+        meta = md.Meta  # dict {clé: [valeur, ...]}
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Métadonnées du document")
+        dlg.setMinimumWidth(520)
+
+        layout = QVBoxLayout(dlg)
+
+        if meta:
+            table = QTableWidget(len(meta), 2, dlg)
+            table.setHorizontalHeaderLabels(["Clé", "Valeur"])
+            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            table.verticalHeader().setVisible(False)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            table.setShowGrid(False)
+            table.setAlternatingRowColors(True)
+
+            for row, (key, raw_values) in enumerate(sorted(meta.items())):
+                table.setItem(row, 0, QTableWidgetItem(key))
+                tokens = self._split_meta_values(raw_values)
+                if len(tokens) > 1:
+                    table.setCellWidget(row, 1, self._make_badge_widget(tokens))
+                    table.setRowHeight(row, 34)
+                else:
+                    table.setItem(row, 1, QTableWidgetItem(tokens[0] if tokens else ""))
+
+            layout.addWidget(table)
+        else:
+            label = QLabel("Aucune métadonnée trouvée dans ce document.")
+            label.setStyleSheet("color: #666; padding: 12px;")
+            layout.addWidget(label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dlg.accept)
+        layout.addWidget(buttons)
+
+        dlg.exec()
+
+    # -----------------------------------------------------------------------
     # Gestion CSS
     # -----------------------------------------------------------------------
 
@@ -918,8 +1133,21 @@ class MarkdownApp(QMainWindow):
             return
         super().keyPressEvent(event)
 
+    def _restore_geometry(self):
+        settings = QSettings("maillard.li", "MarkdownViewer")
+        geometry = settings.value("windowGeometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        else:
+            self.resize(1000, 750)
+
+    def _save_geometry(self):
+        settings = QSettings("maillard.li", "MarkdownViewer")
+        settings.setValue("windowGeometry", self.saveGeometry())
+
     def closeEvent(self, event):
         if self._maybe_save():
+            self._save_geometry()
             event.accept()
         else:
             event.ignore()
