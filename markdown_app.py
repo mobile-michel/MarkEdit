@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEnginePage
 
 import markdown
 from pygments.formatters import HtmlFormatter
@@ -37,10 +38,12 @@ MARKDOWN_EXTENSIONS = [
     "tables", "fenced_code", "codehilite", "toc", "nl2br",
     "sane_lists", "smarty", "attr_list", "def_list",
     "footnotes", "admonition", "meta",
+    "pymdownx.mark", "pymdownx.tilde",
 ]
 
 MARKDOWN_EXT_CONFIGS = {
     "codehilite": {"css_class": "highlight", "guess_lang": True},
+    "pymdownx.tilde": {"subscript": False},
 }
 
 _PYGMENTS_CSS       = HtmlFormatter(style="default").get_style_defs(".highlight")
@@ -496,6 +499,21 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
 
 # ---------------------------------------------------------------------------
+# Page web avec ouverture des liens externes dans le navigateur système
+# ---------------------------------------------------------------------------
+
+class ExternalLinkPage(QWebEnginePage):
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+            scheme = url.scheme()
+            if scheme in ("http", "https", "mailto"):
+                import webbrowser
+                webbrowser.open(url.toString())
+                return False
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
+# ---------------------------------------------------------------------------
 # Application principale
 # ---------------------------------------------------------------------------
 
@@ -533,6 +551,7 @@ class MarkdownApp(QMainWindow):
 
     def _setup_ui(self):
         self._web_view = QWebEngineView()
+        self._web_view.setPage(ExternalLinkPage(self._web_view))
         self._web_view.wheelEvent = self._web_wheel_event
 
         self._editor = CodeEditor()
