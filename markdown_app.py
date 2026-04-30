@@ -10,6 +10,7 @@ from datetime import date, datetime
 
 from PyQt6.QtCore import (
     Qt, QUrl, QMarginsF, QSize, QTimer, QSettings, QRect, QFileSystemWatcher,
+    QObject, QEvent,
 )
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
@@ -514,6 +515,36 @@ class ExternalLinkPage(QWebEnginePage):
 
 
 # ---------------------------------------------------------------------------
+# Filtre de scroll pour la synchronisation webview → éditeur
+# ---------------------------------------------------------------------------
+
+class _WebScrollFilter(QObject):
+    """Intercepte les wheel events sur le webview (et ses enfants internes Qt6)."""
+
+    def __init__(self, owner):
+        super().__init__(owner)
+        self._owner = owner
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.Wheel:
+            w = obj
+            while w is not None:
+                if w is self._owner._web_view:
+                    app = self._owner
+                    if (app._mode == "split"
+                            and not app._typing_active
+                            and not event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                        delta = event.angleDelta().y()
+                        sb = app._editor.verticalScrollBar()
+                        app._scroll_sync_lock = True
+                        sb.setValue(sb.value() - delta * 3 // 120)
+                        app._scroll_sync_lock = False
+                    break
+                w = w.parent() or None
+        return False  # laisser l'événement se propager normalement
+
+
+# ---------------------------------------------------------------------------
 # Application principale
 # ---------------------------------------------------------------------------
 
@@ -529,6 +560,8 @@ class MarkdownApp(QMainWindow):
         self._saving = False
         self._current_theme = DEFAULT_THEME
         self._current_width = DEFAULT_WIDTH
+        self._scroll_sync_lock = False
+        self._typing_active = False
 
         self._setup_ui()
         self._setup_menus()
@@ -553,6 +586,8 @@ class MarkdownApp(QMainWindow):
         self._web_view = QWebEngineView()
         self._web_view.setPage(ExternalLinkPage(self._web_view))
         self._web_view.wheelEvent = self._web_wheel_event
+        self._web_scroll_filter = _WebScrollFilter(self)
+        QApplication.instance().installEventFilter(self._web_scroll_filter)
 
         self._editor = CodeEditor()
         self._editor.setTabStopDistance(32)
@@ -578,6 +613,11 @@ class MarkdownApp(QMainWindow):
         self._stats_timer.setSingleShot(True)
         self._stats_timer.setInterval(400)
         self._stats_timer.timeout.connect(self._update_stats)
+
+        self._typing_timer = QTimer(self)
+        self._typing_timer.setSingleShot(True)
+        self._typing_timer.setInterval(1500)
+        self._typing_timer.timeout.connect(self._on_typing_idle)
 
         self._setup_search_bar()
         self._setup_toc_dock()
@@ -857,6 +897,7 @@ class MarkdownApp(QMainWindow):
         self._act_replace.triggered.connect(self._toggle_replace)
 
         self._editor.textChanged.connect(self._on_text_changed)
+        self._editor.verticalScrollBar().valueChanged.connect(self._on_editor_scrolled)
         self._toc_list.itemClicked.connect(self._on_toc_click)
         self._toc_dock.visibilityChanged.connect(self._on_dock_visibility_changed)
 
@@ -1229,7 +1270,46 @@ class MarkdownApp(QMainWindow):
         base_url = QUrl("file:///")
         if self._current_file:
             base_url = QUrl.fromLocalFile(os.path.dirname(self._current_file) + "/")
+
+        if self._mode == "split" and self._typing_active:
+            self._web_view.page().loadFinished.connect(self._scroll_web_to_cursor_once)
+
         self._web_view.setHtml(html, base_url)
+
+    def _scroll_web_to_cursor_once(self, _ok):
+        try:
+            self._web_view.page().loadFinished.disconnect(self._scroll_web_to_cursor_once)
+        except RuntimeError:
+            pass
+        if self._mode != "split":
+            return
+        cursor = self._editor.textCursor()
+        total = max(self._editor.document().blockCount() - 1, 1)
+        ratio = cursor.blockNumber() / total
+        js = (
+            "(function(){"
+            f"  var h = document.documentElement.scrollHeight - window.innerHeight;"
+            f"  if (h > 0) window.scrollTo(0, {ratio:.6f} * h);"
+            "})();"
+        )
+        self._web_view.page().runJavaScript(js)
+
+    def _on_typing_idle(self):
+        self._typing_active = False
+
+    def _on_editor_scrolled(self, value):
+        if self._scroll_sync_lock or self._mode != "split" or self._typing_active:
+            return
+        sb = self._editor.verticalScrollBar()
+        maximum = sb.maximum()
+        ratio = value / maximum if maximum > 0 else 0.0
+        js = (
+            "(function(){"
+            f"  var h = document.documentElement.scrollHeight - window.innerHeight;"
+            f"  if (h > 0) window.scrollTo(0, {ratio:.6f} * h);"
+            "})();"
+        )
+        self._web_view.page().runJavaScript(js)
 
     def _build_html(self):
         source = self._editor.toPlainText()
@@ -1859,6 +1939,8 @@ class MarkdownApp(QMainWindow):
         if not self._modified:
             self._set_modified(True)
         if self._mode == "split":
+            self._typing_active = True
+            self._typing_timer.start()
             self._render_timer.start()
         self._stats_timer.start()
 
