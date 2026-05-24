@@ -1044,6 +1044,12 @@ class MarkdownApp(QMainWindow):
     def _setup_toolbar(self):
         self._toolbar = QToolBar("Barre d'outils")
         self._toolbar.setMovable(False)
+        self._toolbar.setStyleSheet(
+            "QToolBar::separator {"
+            "  width: 1px; margin: 4px 6px;"
+            "  background: palette(mid);"
+            "}"
+        )
         self.addToolBar(self._toolbar)
         self._rebuild_toolbar()
 
@@ -1811,7 +1817,10 @@ class MarkdownApp(QMainWindow):
             QMessageBox.critical(self, "Erreur", f"Impossible d'enregistrer :\n{e}")
             self._saving = False
             return
-        self._saving = False
+        # Délai pour laisser le signal du QFileSystemWatcher arriver avant de
+        # réinitialiser _saving — sans ça, le signal arrive après et déclenche
+        # faussement la boîte de dialogue "Fichier modifié en dehors de l'app".
+        QTimer.singleShot(500, lambda: setattr(self, "_saving", False))
         if self._current_file != path:
             if self._current_file and self._current_file in self._watcher.files():
                 self._watcher.removePath(self._current_file)
