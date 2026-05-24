@@ -32,13 +32,13 @@ Ce viewer se rapproche le plus de **Markdown Extra** (PHP Markdown Extra, Michel
 | Table des matières `[TOC]`         | ✅        | ✅             | ❌           | ❌         | ✅     |
 | Sauts de ligne → `<br>`            | ✅        | ❌             | ✅           | ❌         | ❌     |
 | Typographie (`--`, `"..."`)        | ✅        | ❌             | ❌           | ❌         | ✅     |
+| Texte surligné `==texte==`         | ✅        | ❌             | ❌           | ❌         | ✅     |
 | ~~Texte barré~~                    | ✅        | ❌             | ✅           | ❌         | ✅     |
 | Abréviations `*[HTML]: ...`        | ❌        | ✅             | ❌           | ❌         | ❌     |
 | Autolinks bruts `https://...`      | ❌        | ❌             | ✅           | ✅         | ✅     |
 | Formules mathématiques LaTeX       | ❌        | ❌             | ❌           | ❌         | ✅     |
 | Citations bibliographiques         | ❌        | ❌             | ❌           | ❌         | ✅     |
 | Tableaux en grille (grid tables)   | ❌        | ❌             | ❌           | ❌         | ✅     |
-| Texte surligné `==texte==`         | ✅        | ❌             | ❌           | ❌         | ✅     |
 | Émojis `:smile:`                   | ❌        | ❌             | ✅           | ❌         | ❌     |
 
 ### Ce que chaque variante apporte en plus

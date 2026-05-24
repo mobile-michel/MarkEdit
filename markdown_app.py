@@ -15,6 +15,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
     QTextCharFormat, QColor, QTextDocument, QSyntaxHighlighter, QPalette, QTextFormat,
+    QPixmap,
 )
 from PyQt6.QtPdf import QPdfDocument
 from PyQt6.QtWidgets import (
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLabel, QCheckBox,
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox,
     QFormLayout, QDockWidget, QListWidget, QListWidgetItem, QMenu, QFrame, QTextBrowser,
+    QStyle,
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -76,7 +78,8 @@ img { max-width: 100%; height: auto; }
 dt { font-weight: 600; margin-top: 0.8em; }
 dd { margin-left: 1.5em; margin-bottom: 0.5em; }
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 1em 0; }
-.table-scroll > table { margin: 0; min-width: max-content; }
+.table-scroll > table { margin: 0; }
+th, td { word-wrap: break-word; overflow-wrap: break-word; }
 @media print {
     body { font-size: 12pt; color: #000; background: #fff; max-width: none !important; margin: 0; padding: 0; }
     .table-scroll { overflow: visible; }
@@ -291,9 +294,71 @@ dd { margin-left:1.5em; margin-bottom:0.5em; }
 .toc { background:#181825; border:1px solid #313244; border-radius:6px; padding:12px 20px; margin:1em 0; }
 .toc ul { list-style:none; padding-left:1.2em; } .toc > ul { padding-left:0; }
 .table-scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:1em 0; }
-.table-scroll > table { margin:0; min-width:max-content; }
+.table-scroll > table { margin:0; }
+th, td { word-wrap:break-word; overflow-wrap:break-word; }
 @media print { body { max-width:none !important; } .table-scroll { overflow:visible; } }
 """)
+
+def _icon(theme_name, fallback=None):
+    icon = QIcon.fromTheme(theme_name)
+    if icon.isNull() and fallback is not None:
+        return QApplication.style().standardIcon(fallback)
+    return icon
+
+
+def _width_icon(fraction: float) -> QIcon:
+    """Icône colonne : fraction = proportion de la largeur occupée par le contenu."""
+    S = 20
+    pix = QPixmap(S, S)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    # Page
+    p.setPen(QColor("#bbb"))
+    p.setBrush(QColor("#f5f5f5"))
+    p.drawRoundedRect(0, 0, S - 1, S - 1, 2, 2)
+    # Colonne de contenu
+    margin = max(1, int((S * (1.0 - fraction)) / 2))
+    col_w = S - 2 * margin
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#3b82f6"))
+    y = 3
+    for h in (2, 2, 2, 2):
+        if y + h > S - 2:
+            break
+        p.drawRect(margin, y, col_w, h)
+        y += h + 3
+    p.end()
+    return QIcon(pix)
+
+
+def _theme_icon(accent: str, serif: bool = False, dense: bool = False) -> QIcon:
+    """Icône thème : page miniature avec lignes stylisées."""
+    S = 20
+    pix = QPixmap(S, S)
+    pix.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    # Fond page
+    p.setPen(QColor("#bbb"))
+    p.setBrush(QColor("#fafafa"))
+    p.drawRoundedRect(0, 0, S - 1, S - 1, 2, 2)
+    p.setPen(Qt.PenStyle.NoPen)
+    # Titre (barre colorée, plus épaisse si serif)
+    title_h = 3 if serif else 2
+    p.setBrush(QColor(accent))
+    p.drawRect(2, 3, S - 4, title_h)
+    # Lignes de texte
+    gap = 2 if dense else 3
+    line_h = 1
+    y = 3 + title_h + gap
+    p.setBrush(QColor("#ccc"))
+    while y + line_h <= S - 3:
+        p.drawRect(2, y, S - 4, line_h)
+        y += line_h + gap
+    p.end()
+    return QIcon(pix)
+
 
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fr">
@@ -545,6 +610,16 @@ class _WebScrollFilter(QObject):
 
 
 # ---------------------------------------------------------------------------
+# Item de liste pour le dialogue de personnalisation de la toolbar
+# ---------------------------------------------------------------------------
+
+class _ToolbarItem(QListWidgetItem):
+    def __init__(self, label: str, name: str, icon: QIcon):
+        super().__init__(icon, label)
+        self.setData(Qt.ItemDataRole.UserRole, name)
+
+
+# ---------------------------------------------------------------------------
 # Application principale
 # ---------------------------------------------------------------------------
 
@@ -697,45 +772,62 @@ class MarkdownApp(QMainWindow):
 
         self._act_new = QAction("&Nouveau", self)
         self._act_new.setShortcut(QKeySequence.StandardKey.New)
+        self._act_new.setIcon(_icon("document-new", QStyle.StandardPixmap.SP_FileIcon))
+        self._act_new.setObjectName("new")
         file_menu.addAction(self._act_new)
 
         self._act_open = QAction("&Ouvrir…", self)
         self._act_open.setShortcut(QKeySequence.StandardKey.Open)
+        self._act_open.setIcon(_icon("document-open", QStyle.StandardPixmap.SP_DirOpenIcon))
+        self._act_open.setObjectName("open")
         file_menu.addAction(self._act_open)
 
         self._recent_menu = QMenu("Fichiers &récents", self)
+        self._recent_menu.setIcon(_icon("document-open-recent"))
         file_menu.addMenu(self._recent_menu)
 
         file_menu.addSeparator()
 
         self._act_save = QAction("&Enregistrer", self)
         self._act_save.setShortcut(QKeySequence.StandardKey.Save)
+        self._act_save.setIcon(_icon("document-save", QStyle.StandardPixmap.SP_DialogSaveButton))
+        self._act_save.setObjectName("save")
         file_menu.addAction(self._act_save)
 
         self._act_save_as = QAction("Enregistrer &sous…", self)
         self._act_save_as.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self._act_save_as.setIcon(_icon("document-save-as"))
+        self._act_save_as.setObjectName("save_as")
         file_menu.addAction(self._act_save_as)
 
         file_menu.addSeparator()
 
         self._act_export_html = QAction("Exporter en &HTML…", self)
         self._act_export_html.setShortcut(QKeySequence("Ctrl+E"))
+        self._act_export_html.setIcon(_icon("text-html"))
+        self._act_export_html.setObjectName("export_html")
         file_menu.addAction(self._act_export_html)
 
         self._act_export_pdf = QAction("Exporter en &PDF…", self)
         self._act_export_pdf.setShortcut(QKeySequence("Ctrl+Shift+E"))
+        self._act_export_pdf.setIcon(_icon("application-pdf"))
+        self._act_export_pdf.setObjectName("export_pdf")
         file_menu.addAction(self._act_export_pdf)
 
         file_menu.addSeparator()
 
         self._act_print = QAction("&Imprimer…", self)
         self._act_print.setShortcut(QKeySequence.StandardKey.Print)
+        self._act_print.setIcon(_icon("document-print", QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self._act_print.setObjectName("print")
         file_menu.addAction(self._act_print)
 
         file_menu.addSeparator()
 
         self._act_quit = QAction("&Quitter", self)
         self._act_quit.setShortcut(QKeySequence.StandardKey.Quit)
+        self._act_quit.setIcon(_icon("application-exit", QStyle.StandardPixmap.SP_DialogCloseButton))
+        self._act_quit.setObjectName("quit")
         file_menu.addAction(self._act_quit)
 
         # --- Édition ---
@@ -743,10 +835,14 @@ class MarkdownApp(QMainWindow):
 
         self._act_search = QAction("&Rechercher…", self)
         self._act_search.setShortcut(QKeySequence("Ctrl+F"))
+        self._act_search.setIcon(_icon("edit-find"))
+        self._act_search.setObjectName("search")
         edit_menu.addAction(self._act_search)
 
         self._act_replace = QAction("&Remplacer…", self)
         self._act_replace.setShortcut(QKeySequence("Ctrl+H"))
+        self._act_replace.setIcon(_icon("edit-find-replace"))
+        self._act_replace.setObjectName("replace")
         edit_menu.addAction(self._act_replace)
 
         # --- Affichage ---
@@ -755,16 +851,22 @@ class MarkdownApp(QMainWindow):
         self._act_view = QAction("Mode &Affichage", self)
         self._act_view.setShortcut(QKeySequence("F5"))
         self._act_view.setCheckable(True)
+        self._act_view.setIcon(_icon("view-preview", QStyle.StandardPixmap.SP_FileDialogContentsView))
+        self._act_view.setObjectName("view")
         view_menu.addAction(self._act_view)
 
         self._act_edit = QAction("Mode &Édition", self)
         self._act_edit.setShortcut(QKeySequence("F6"))
         self._act_edit.setCheckable(True)
+        self._act_edit.setIcon(_icon("document-edit", QStyle.StandardPixmap.SP_FileIcon))
+        self._act_edit.setObjectName("edit")
         view_menu.addAction(self._act_edit)
 
         self._act_split = QAction("Mode &Partagé", self)
         self._act_split.setShortcut(QKeySequence("F7"))
         self._act_split.setCheckable(True)
+        self._act_split.setIcon(_icon("view-split-left-right", QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self._act_split.setObjectName("split")
         view_menu.addAction(self._act_split)
 
         self._mode_group = QActionGroup(self)
@@ -778,20 +880,28 @@ class MarkdownApp(QMainWindow):
         self._act_dark = QAction("Mode &sombre", self)
         self._act_dark.setShortcut(QKeySequence("F8"))
         self._act_dark.setCheckable(True)
+        self._act_dark.setIcon(_icon("weather-clear-night"))
+        self._act_dark.setObjectName("dark")
         view_menu.addAction(self._act_dark)
 
         view_menu.addSeparator()
 
         self._act_zoom_in = QAction("Zoom &avant", self)
         self._act_zoom_in.setShortcut(QKeySequence("Ctrl++"))
+        self._act_zoom_in.setIcon(_icon("zoom-in"))
+        self._act_zoom_in.setObjectName("zoom_in")
         view_menu.addAction(self._act_zoom_in)
 
         self._act_zoom_out = QAction("Zoom &arrière", self)
         self._act_zoom_out.setShortcut(QKeySequence("Ctrl+-"))
+        self._act_zoom_out.setIcon(_icon("zoom-out"))
+        self._act_zoom_out.setObjectName("zoom_out")
         view_menu.addAction(self._act_zoom_out)
 
         self._act_zoom_reset = QAction("Zoom &normal", self)
         self._act_zoom_reset.setShortcut(QKeySequence("Ctrl+0"))
+        self._act_zoom_reset.setIcon(_icon("zoom-original"))
+        self._act_zoom_reset.setObjectName("zoom_reset")
         view_menu.addAction(self._act_zoom_reset)
 
         view_menu.addSeparator()
@@ -799,31 +909,57 @@ class MarkdownApp(QMainWindow):
         self._act_toc = QAction("Panneau &latéral", self)
         self._act_toc.setShortcut(QKeySequence("F9"))
         self._act_toc.setCheckable(True)
+        self._act_toc.setIcon(_icon("view-list-tree", QStyle.StandardPixmap.SP_FileDialogListView))
+        self._act_toc.setObjectName("toc")
         view_menu.addAction(self._act_toc)
+
+        view_menu.addSeparator()
+
+        self._act_customize_tb = QAction("Personnaliser la barre d'outils…", self)
+        self._act_customize_tb.setIcon(_icon("configure-toolbars", QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self._act_customize_tb.setObjectName("customize_tb")
+        view_menu.addAction(self._act_customize_tb)
 
         # --- Outils ---
         tools_menu = bar.addMenu("&Outils")
 
         self._act_gen_metadata = QAction("&Générer les métadonnées…", self)
         self._act_gen_metadata.setShortcut(QKeySequence("Ctrl+Shift+M"))
+        self._act_gen_metadata.setIcon(_icon("document-properties"))
+        self._act_gen_metadata.setObjectName("gen_metadata")
         tools_menu.addAction(self._act_gen_metadata)
 
         self._act_metadata = QAction("&Voir les métadonnées…", self)
         self._act_metadata.setShortcut(QKeySequence("Ctrl+M"))
+        self._act_metadata.setIcon(_icon("dialog-information", QStyle.StandardPixmap.SP_MessageBoxInformation))
+        self._act_metadata.setObjectName("metadata")
         tools_menu.addAction(self._act_metadata)
 
         tools_menu.addSeparator()
 
         # Thèmes de présentation
         themes_menu = tools_menu.addMenu("&Thème")
+        themes_menu.setIcon(_icon("preferences-desktop-theme", QStyle.StandardPixmap.SP_DesktopIcon))
         self._theme_actions = {}
         theme_group = QActionGroup(self)
         theme_group.setExclusive(True)
+        _theme_icons = {
+            "Classique":   _theme_icon("#3b82f6"),
+            "Minimaliste": _theme_icon("#6b7280"),
+            "Sérif":       _theme_icon("#92400e", serif=True),
+            "Compact":     _theme_icon("#0e7490", dense=True),
+        }
+        _theme_objnames = {
+            "Classique": "theme_classique", "Minimaliste": "theme_minimaliste",
+            "Sérif": "theme_serif",         "Compact": "theme_compact",
+        }
         for name in THEMES:
             act = QAction(name, self)
             act.setCheckable(True)
             act.setChecked(name == DEFAULT_THEME)
             act.setData(name)
+            act.setIcon(_theme_icons.get(name, QIcon()))
+            act.setObjectName(_theme_objnames.get(name, f"theme_{name}"))
             act.triggered.connect(self._on_set_theme)
             theme_group.addAction(act)
             themes_menu.addAction(act)
@@ -831,37 +967,96 @@ class MarkdownApp(QMainWindow):
 
         # Largeurs de contenu
         widths_menu = tools_menu.addMenu("&Largeur")
+        widths_menu.setIcon(_icon("zoom-fit-width", QStyle.StandardPixmap.SP_TitleBarMaxButton))
         self._width_actions = {}
         width_group = QActionGroup(self)
         width_group.setExclusive(True)
+        _width_icons = {
+            "Étroit":         _width_icon(0.35),
+            "Normal":         _width_icon(0.60),
+            "Large":          _width_icon(0.80),
+            "Pleine largeur": _width_icon(1.00),
+        }
+        _width_objnames = {
+            "Étroit": "width_etroit", "Normal": "width_normal",
+            "Large":  "width_large",  "Pleine largeur": "width_pleine",
+        }
         for name in CONTENT_WIDTHS:
             act = QAction(name, self)
             act.setCheckable(True)
             act.setChecked(name == DEFAULT_WIDTH)
             act.setData(name)
+            act.setIcon(_width_icons.get(name, QIcon()))
+            act.setObjectName(_width_objnames.get(name, f"width_{name}"))
             act.triggered.connect(self._on_set_width)
             width_group.addAction(act)
             widths_menu.addAction(act)
             self._width_actions[name] = act
 
-    def _setup_toolbar(self):
-        tb = QToolBar("Barre d'outils")
-        tb.setMovable(False)
-        self.addToolBar(tb)
+    # Ordre par défaut de la toolbar (noms d'objectName, "---" = séparateur)
+    _DEFAULT_TOOLBAR = [
+        "new", "open", "save", "---",
+        "print", "---",
+        "search", "---",
+        "view", "edit", "split", "---",
+        "dark",
+    ]
 
-        tb.addAction(self._act_new)
-        tb.addAction(self._act_open)
-        tb.addAction(self._act_save)
-        tb.addSeparator()
-        tb.addAction(self._act_print)
-        tb.addSeparator()
-        tb.addAction(self._act_search)
-        tb.addSeparator()
-        tb.addAction(self._act_view)
-        tb.addAction(self._act_edit)
-        tb.addAction(self._act_split)
-        tb.addSeparator()
-        tb.addAction(self._act_dark)
+    def _all_toolbar_actions(self):
+        """Dictionnaire nom → QAction pour toutes les actions plaçables en toolbar."""
+        d = {
+            "new":          self._act_new,
+            "open":         self._act_open,
+            "save":         self._act_save,
+            "save_as":      self._act_save_as,
+            "export_html":  self._act_export_html,
+            "export_pdf":   self._act_export_pdf,
+            "print":        self._act_print,
+            "search":       self._act_search,
+            "replace":      self._act_replace,
+            "view":         self._act_view,
+            "edit":         self._act_edit,
+            "split":        self._act_split,
+            "dark":         self._act_dark,
+            "zoom_in":      self._act_zoom_in,
+            "zoom_out":     self._act_zoom_out,
+            "zoom_reset":   self._act_zoom_reset,
+            "toc":          self._act_toc,
+            "gen_metadata": self._act_gen_metadata,
+            "metadata":     self._act_metadata,
+        }
+        # Thèmes
+        _theme_objnames = {
+            "Classique": "theme_classique", "Minimaliste": "theme_minimaliste",
+            "Sérif": "theme_serif",         "Compact": "theme_compact",
+        }
+        for name, act in self._theme_actions.items():
+            d[_theme_objnames[name]] = act
+        # Largeurs
+        _width_objnames = {
+            "Étroit": "width_etroit", "Normal": "width_normal",
+            "Large":  "width_large",  "Pleine largeur": "width_pleine",
+        }
+        for name, act in self._width_actions.items():
+            d[_width_objnames[name]] = act
+        return d
+
+    def _setup_toolbar(self):
+        self._toolbar = QToolBar("Barre d'outils")
+        self._toolbar.setMovable(False)
+        self.addToolBar(self._toolbar)
+        self._rebuild_toolbar()
+
+    def _rebuild_toolbar(self):
+        self._toolbar.clear()
+        settings = QSettings("maillard.li", "MarkdownViewer")
+        items = settings.value("toolbarItems", self._DEFAULT_TOOLBAR)
+        actions = self._all_toolbar_actions()
+        for name in items:
+            if name == "---":
+                self._toolbar.addSeparator()
+            elif name in actions:
+                self._toolbar.addAction(actions[name])
 
     def _setup_statusbar(self):
         self._statusbar = QStatusBar()
@@ -895,6 +1090,7 @@ class MarkdownApp(QMainWindow):
 
         self._act_search.triggered.connect(self._toggle_search)
         self._act_replace.triggered.connect(self._toggle_replace)
+        self._act_customize_tb.triggered.connect(self._on_customize_toolbar)
 
         self._editor.textChanged.connect(self._on_text_changed)
         self._editor.verticalScrollBar().valueChanged.connect(self._on_editor_scrolled)
@@ -1930,6 +2126,132 @@ class MarkdownApp(QMainWindow):
         buttons.rejected.connect(dlg.accept)
         layout.addWidget(buttons)
         dlg.exec()
+
+    # -----------------------------------------------------------------------
+    # Personnalisation de la barre d'outils
+    # -----------------------------------------------------------------------
+
+    def _on_customize_toolbar(self):
+        settings = QSettings("maillard.li", "MarkdownViewer")
+        current_items = list(settings.value("toolbarItems", self._DEFAULT_TOOLBAR))
+        all_actions = self._all_toolbar_actions()
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Personnaliser la barre d'outils")
+        dlg.setMinimumSize(560, 420)
+
+        main_layout = QHBoxLayout()
+
+        # --- Panneau gauche : actions disponibles ---
+        left_layout = QVBoxLayout()
+        left_label = QLabel("Actions disponibles :")
+        left_label.setStyleSheet("font-weight: bold;")
+        left_layout.addWidget(left_label)
+        available_list = QListWidget()
+        available_list.addItem(_ToolbarItem("--- Séparateur ---", "---", QIcon()))
+        for name, act in all_actions.items():
+            available_list.addItem(_ToolbarItem(act.text().replace("&", ""), name, act.icon()))
+        left_layout.addWidget(available_list)
+
+        # --- Boutons du milieu ---
+        mid_layout = QVBoxLayout()
+        mid_layout.addStretch()
+        btn_add = QPushButton("→")
+        btn_add.setFixedWidth(36)
+        btn_remove = QPushButton("←")
+        btn_remove.setFixedWidth(36)
+        mid_layout.addWidget(btn_add)
+        mid_layout.addWidget(btn_remove)
+        mid_layout.addStretch()
+
+        # --- Panneau droit : barre actuelle ---
+        right_layout = QVBoxLayout()
+        right_label = QLabel("Barre d'outils :")
+        right_label.setStyleSheet("font-weight: bold;")
+        right_layout.addWidget(right_label)
+        current_list = QListWidget()
+        for name in current_items:
+            if name == "---":
+                current_list.addItem(_ToolbarItem("--- Séparateur ---", "---", QIcon()))
+            elif name in all_actions:
+                act = all_actions[name]
+                current_list.addItem(_ToolbarItem(act.text().replace("&", ""), name, act.icon()))
+        right_layout.addWidget(current_list)
+
+        # --- Boutons haut/bas ---
+        updown_layout = QHBoxLayout()
+        btn_up = QPushButton("↑ Monter")
+        btn_down = QPushButton("↓ Descendre")
+        btn_reset = QPushButton("Réinitialiser")
+        updown_layout.addWidget(btn_up)
+        updown_layout.addWidget(btn_down)
+        updown_layout.addStretch()
+        updown_layout.addWidget(btn_reset)
+        right_layout.addLayout(updown_layout)
+
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(mid_layout)
+        main_layout.addLayout(right_layout)
+
+        vl = QVBoxLayout(dlg)
+        vl.addLayout(main_layout)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        vl.addWidget(buttons)
+
+        def add_item():
+            item = available_list.currentItem()
+            if item:
+                current_list.addItem(_ToolbarItem(item.text(), item.data(Qt.ItemDataRole.UserRole), item.icon()))
+
+        def remove_item():
+            row = current_list.currentRow()
+            if row >= 0:
+                current_list.takeItem(row)
+
+        def move_up():
+            row = current_list.currentRow()
+            if row > 0:
+                item = current_list.takeItem(row)
+                current_list.insertItem(row - 1, item)
+                current_list.setCurrentRow(row - 1)
+
+        def move_down():
+            row = current_list.currentRow()
+            if row < current_list.count() - 1:
+                item = current_list.takeItem(row)
+                current_list.insertItem(row + 1, item)
+                current_list.setCurrentRow(row + 1)
+
+        def reset_default():
+            current_list.clear()
+            for name in self._DEFAULT_TOOLBAR:
+                if name == "---":
+                    current_list.addItem(_ToolbarItem("--- Séparateur ---", "---", QIcon()))
+                elif name in all_actions:
+                    act = all_actions[name]
+                    current_list.addItem(_ToolbarItem(act.text().replace("&", ""), name, act.icon()))
+
+        btn_add.clicked.connect(add_item)
+        btn_remove.clicked.connect(remove_item)
+        btn_up.clicked.connect(move_up)
+        btn_down.clicked.connect(move_down)
+        btn_reset.clicked.connect(reset_default)
+        available_list.itemDoubleClicked.connect(lambda _: add_item())
+        current_list.itemDoubleClicked.connect(lambda _: remove_item())
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        new_items = [
+            current_list.item(i).data(Qt.ItemDataRole.UserRole)
+            for i in range(current_list.count())
+        ]
+        settings.setValue("toolbarItems", new_items)
+        self._rebuild_toolbar()
 
     # -----------------------------------------------------------------------
     # Gestion d'état
