@@ -63,7 +63,7 @@ Name=MarkEdit
 Comment=Éditeur Markdown avec aperçu en temps réel
 Exec=/home/michel/.local/opt/MarkEdit/.venv/bin/python3 /home/michel/.local/opt/MarkEdit/markdown_app.py %f
 Icon=text-editor
-Categories=Utility;TextEditor;
+Categories=Office;Utility;TextEditor;
 Terminal=false
 MimeType=text/markdown;text/plain;
 EOF
