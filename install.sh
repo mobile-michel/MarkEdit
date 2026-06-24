@@ -40,8 +40,7 @@ if [ ! -d "$INSTALL_DIR/.venv" ]; then
         PyQt6-WebEngine \
         markdown \
         pygments \
-        pymdown-extensions \
-        PyQt6-pdf
+        pymdown-extensions
     echo "✅ Dépendances installées"
 else
     echo "🐍 Environnement virtuel déjà présent"
