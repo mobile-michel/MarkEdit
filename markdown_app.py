@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Application Markdown Viewer/Editor/Printer avec PyQt6 et QWebEngine."""
+"""Application MarkEdit/Editor/Printer avec PyQt6 et QWebEngine."""
 
 import sys
 import os
@@ -2283,7 +2283,7 @@ class MarkdownApp(QMainWindow):
         name = os.path.basename(self._current_file) if self._current_file else "Sans titre"
         if self._modified:
             name += " *"
-        self.setWindowTitle(f"{name} — Markdown Viewer")
+        self.setWindowTitle(f"{name} — MarkEdit")
 
     def _maybe_save(self):
         if not self._modified:
@@ -2375,7 +2375,7 @@ class MarkdownApp(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    app.setApplicationName("Markdown Viewer")
+    app.setApplicationName("MarkEdit")
 
     file_path = sys.argv[1] if len(sys.argv) > 1 else None
     window = MarkdownApp(file_path)
