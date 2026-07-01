@@ -2968,7 +2968,10 @@ class MarkdownApp(QMainWindow):
     # -----------------------------------------------------------------------
 
     def _on_text_changed(self):
-        if not self._modified:
+        # document().isModified() distingue une vraie frappe d'un simple
+        # rehighlight() (ex. changement de thème), qui émet aussi
+        # textChanged sans que le contenu n'ait réellement changé.
+        if self._editor.document().isModified() and not self._modified:
             self._set_modified(True)
         if self._mode == "split":
             self._typing_active = True
@@ -2978,6 +2981,8 @@ class MarkdownApp(QMainWindow):
 
     def _set_modified(self, val):
         self._modified = val
+        if not val:
+            self._editor.document().setModified(False)
         self._update_title()
 
     def _update_title(self):
