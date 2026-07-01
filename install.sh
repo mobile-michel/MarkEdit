@@ -1,8 +1,9 @@
 #!/bin/bash
-# Script d'installation de MarkEdit et désinstallation de Markdown Viewer
+# Script d'installation de MarkEdit
 
 set -e
 
+VENV_PATH="$HOME/venvs/markedit"
 INSTALL_DIR="/home/michel/.local/opt/MarkEdit"
 OLD_INSTALL_DIR="/home/michel/.local/opt/markdown-viewer"
 DESKTOP_FILE="$HOME/.local/share/applications/markedit.desktop"
