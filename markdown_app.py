@@ -12,7 +12,7 @@ from datetime import date, datetime
 
 from PyQt6.QtCore import (
     Qt, QUrl, QMarginsF, QSize, QTimer, QSettings, QRect, QFileSystemWatcher,
-    QObject, QEvent,
+    QObject, QEvent, pyqtSlot,
 )
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
@@ -31,6 +31,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage
+from PyQt6.QtWebChannel import QWebChannel
 
 import markdown
 from markdown.extensions.toc import slugify as _toc_slugify
@@ -67,6 +68,8 @@ METADATA_LABELS = {
 METADATA_TYPES = ["note", "tâche", "journal", "référence"]
 
 # Langages proposés pour l'insertion d'un bloc de code (libellé, identifiant fencé).
+_RE_SOURCE_TASK = re.compile(r'^(\s*[-*+]\s+)\[([ xX])\](.*)$', re.MULTILINE)
+
 CODE_LANGUAGES = [
     ("Texte", ""), ("Python", "python"), ("JavaScript", "javascript"),
     ("TypeScript", "typescript"), ("Bash", "bash"), ("JSON", "json"),
@@ -109,7 +112,7 @@ DEFAULT_WIDTH = "Normal"
 _COMMON_LIGHT = """
 ul.task-list { list-style: none; padding-left: 1.2em; }
 ul.task-list li { padding-left: 0; }
-ul.task-list input[type="checkbox"] { margin-right: 0.5em; pointer-events: none; accent-color: #1a73e8; width: 1em; height: 1em; }
+ul.task-list input[type="checkbox"] { margin-right: 0.5em; cursor: pointer; accent-color: #1a73e8; width: 1em; height: 1em; }
 img { max-width: 100%; height: auto; }
 dt { font-weight: 600; margin-top: 0.8em; }
 dd { margin-left: 1.5em; margin-bottom: 0.5em; }
@@ -323,7 +326,7 @@ blockquote p { margin:0.4em 0; }
 hr { border:none; border-top:2px solid #313244; margin:2em 0; }
 ul.task-list { list-style:none; padding-left:1.2em; }
 ul.task-list li { padding-left:0; }
-ul.task-list input[type="checkbox"] { margin-right:0.5em; pointer-events:none; accent-color:#89b4fa; width:1em; height:1em; }
+ul.task-list input[type="checkbox"] { margin-right:0.5em; cursor:pointer; accent-color:#89b4fa; width:1em; height:1em; }
 img { max-width:100%; height:auto; }
 dt { font-weight:600; margin-top:0.8em; }
 dd { margin-left:1.5em; margin-bottom:0.5em; }
@@ -403,12 +406,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<script src="qrc:/qtwebchannel/qwebchannel.js"></script>
 <style>
 {css}
 </style>
 </head>
 <body>
 {body}
+<script>
+if (typeof qt !== 'undefined' && qt.webChannelTransport) {{
+    new QWebChannel(qt.webChannelTransport, function(channel) {{
+        window.bridge = channel.objects.bridge;
+    }});
+}}
+</script>
 </body>
 </html>"""
 
@@ -959,6 +970,20 @@ class ExternalLinkPage(QWebEnginePage):
 
 
 # ---------------------------------------------------------------------------
+# Pont JS ↔ Python pour la bascule des cases à cocher en aperçu
+# ---------------------------------------------------------------------------
+
+class TaskBridge(QObject):
+    def __init__(self, on_toggle, parent=None):
+        super().__init__(parent)
+        self._on_toggle = on_toggle
+
+    @pyqtSlot(int)
+    def toggleTask(self, idx):
+        self._on_toggle(idx)
+
+
+# ---------------------------------------------------------------------------
 # Filtre de scroll pour la synchronisation webview → éditeur
 # ---------------------------------------------------------------------------
 
@@ -1021,6 +1046,7 @@ class MarkdownApp(QMainWindow):
         self._setup_menus()
         self._setup_format_toolbar()
         self._setup_toolbar()
+        self._apply_shortcut_tooltips()
         self._setup_statusbar()
         self._connect_signals()
         self._setup_watcher()
@@ -1040,6 +1066,10 @@ class MarkdownApp(QMainWindow):
     def _setup_ui(self):
         self._web_view = QWebEngineView()
         self._web_view.setPage(ExternalLinkPage(self._web_view))
+        self._task_bridge = TaskBridge(self._on_task_checkbox_toggled, self)
+        self._web_channel = QWebChannel(self._web_view.page())
+        self._web_channel.registerObject("bridge", self._task_bridge)
+        self._web_view.page().setWebChannel(self._web_channel)
         self._web_view.wheelEvent = self._web_wheel_event
         self._web_scroll_filter = _WebScrollFilter(self)
         QApplication.instance().installEventFilter(self._web_scroll_filter)
@@ -1545,6 +1575,17 @@ class MarkdownApp(QMainWindow):
         self._format_toolbar = tb
         self._editor_layout.insertWidget(0, tb)
 
+    def _apply_shortcut_tooltips(self):
+        """Ajoute le raccourci clavier entre parenthèses à l'infobulle de
+        chaque action, affiché au survol des icônes."""
+        for act in self.findChildren(QAction):
+            text = act.text().replace("&", "")
+            shortcut = act.shortcut()
+            if not shortcut.isEmpty():
+                act.setToolTip(f"{text} ({shortcut.toString()})")
+            else:
+                act.setToolTip(text)
+
     def _setup_toolbar(self):
         self._toolbar = QToolBar("Barre d'outils")
         self._toolbar.setMovable(False)
@@ -1957,9 +1998,19 @@ class MarkdownApp(QMainWindow):
 
     @staticmethod
     def _render_task_lists(html):
-        html = re.sub(r"<li>\[x\][ \t]", '<li><input type="checkbox" checked> ',
-                      html, flags=re.IGNORECASE)
-        html = re.sub(r"<li>\[ \][ \t]", '<li><input type="checkbox"> ', html)
+        counter = [0]
+
+        def _repl(m):
+            idx = counter[0]
+            counter[0] += 1
+            checked_attr = "checked " if m.group(1).lower() == "x" else ""
+            return (
+                f'<li><input type="checkbox" {checked_attr}data-idx="{idx}" '
+                f'onclick="event.preventDefault(); '
+                f'if(window.bridge) window.bridge.toggleTask({idx});"> '
+            )
+
+        html = re.sub(r"<li>\[([ xX])\][ \t]", _repl, html)
         html = re.sub(r'<ul>\s*(<li><input type="checkbox")',
                       r'<ul class="task-list">\n\1', html)
         return html
@@ -1998,6 +2049,20 @@ class MarkdownApp(QMainWindow):
             return m.group(0)
 
         return re.sub(r'href="#([^"]*)"', repl, html)
+
+    def _on_task_checkbox_toggled(self, idx):
+        source = self._editor.toPlainText()
+        matches = list(_RE_SOURCE_TASK.finditer(source))
+        if idx < 0 or idx >= len(matches):
+            return
+        m = matches[idx]
+        new_mark = " " if m.group(2).lower() == "x" else "x"
+        cursor = self._editor.textCursor()
+        cursor.setPosition(m.start(2))
+        cursor.setPosition(m.end(2), QTextCursor.MoveMode.KeepAnchor)
+        cursor.insertText(new_mark)
+        if self._mode != "edit":
+            self._render_preserving_scroll()
 
     def _render(self):
         source = self._editor.toPlainText()
