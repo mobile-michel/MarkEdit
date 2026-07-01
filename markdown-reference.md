@@ -159,7 +159,7 @@ ___
 
 ### Liste de tâches (cases à cocher)
 
-Rendu automatiquement en cases à cocher (non modifiable en lecture seule) :
+Rendu automatiquement en cases à cocher. En mode Affichage ou Partagé, cliquer sur une case bascule directement `[ ]` / `[x]` dans le document source.
 
 ```
 - [ ] Tâche à faire
@@ -359,18 +359,33 @@ Conversion automatique :
 
 ## Métadonnées (`meta`)
 
-Bloc YAML en tout début de fichier (avant tout autre contenu) :
+Lignes `Clé: valeur` en tout début de fichier, avant tout autre contenu :
 
 ```
----
-title: Mon document
-author: Prénom Nom
-date: 2026-04-30
-tags: exemple, markdown
----
+Type: note
+Title: Mon document
+Description: Résumé du contenu.
+Author: Prénom Nom
+Tags: exemple, markdown
+Created: 2026-01-15
+Timestamp: 2026-07-01
 ```
 
-Les métadonnées s'affichent dans le panneau latéral de l'application. Les champs `title`, `author`, `date` et `tags` sont reconnus et mis en forme automatiquement.
+### Champs reconnus et ordre d'affichage
+
+| Champ         | Libellé affiché | Description                                    |
+|---------------|-----------------|-------------------------------------------------|
+| `type`        | Type            | note / tâche / journal / référence (liste fermée)|
+| `title`       | Titre           | Titre du document                               |
+| `description` | Description     | Résumé en une phrase                            |
+| `author`      | Auteur          | Nom de l'auteur                                 |
+| `tags`        | Tags            | Liste de mots-clés séparés par des virgules      |
+| `created`     | Créé            | Date de création                                |
+| `timestamp`   | Mis à jour      | Date de dernière modification                   |
+
+Le champ `updated` (ancien nom de `timestamp`) reste reconnu et affiché sous le même libellé « Mis à jour », pour les documents créés avant ce changement.
+
+Les métadonnées s'affichent, dans cet ordre, dans le panneau latéral de l'application (F8) et dans la boîte de dialogue **Outils → Modifier les métadonnées…** (`Ctrl+Shift+M`), qui permet de les créer ou de les éditer via un formulaire (le champ Type y est une liste déroulante fermée).
 
 ---
 
@@ -402,6 +417,8 @@ Contenu masqué par défaut.
 
 ## Raccourcis clavier de l'application
 
+### Fichier
+
 | Raccourci          | Action                          |
 |--------------------|---------------------------------|
 | `Ctrl+N`           | Nouveau fichier                 |
@@ -412,15 +429,42 @@ Contenu masqué par défaut.
 | `Ctrl+Shift+E`     | Exporter en PDF                 |
 | `Ctrl+P`           | Imprimer                        |
 | `Ctrl+Q`           | Quitter                         |
+
+### Édition et recherche
+
+| Raccourci          | Action                          |
+|--------------------|---------------------------------|
 | `Ctrl+F`           | Rechercher                      |
 | `Ctrl+H`           | Remplacer                       |
+| `Ctrl+B`           | Gras                            |
+| `Ctrl+I`           | Italique                        |
+| `Ctrl+Shift+X`     | Barré                           |
+| `Ctrl+Shift+C`     | Code                            |
+| `Ctrl+Shift+H`     | Surligné                        |
+| `Ctrl+K`           | Lien                            |
+| `Ctrl+Shift+8`     | Liste à puces                   |
+| `Ctrl+Shift+7`     | Liste numérotée                 |
+| `Ctrl+Shift+T`     | Liste de tâches                 |
+| `Ctrl+Shift+9`     | Citation                        |
+
+Ces raccourcis de formatage entourent la sélection (ou l'insèrent au point du curseur) et fonctionnent comme des interrupteurs : les appliquer une seconde fois retire le formatage. Le bloc de code fencé avec choix du langage n'a pas de raccourci dédié — utiliser le bouton « Code ▾ » de la mini barre d'outils au-dessus de l'éditeur.
+
+### Affichage
+
+| Raccourci          | Action                          |
+|--------------------|---------------------------------|
 | `F5`               | Mode Affichage                  |
 | `F6`               | Mode Édition                    |
 | `F7`               | Mode Partagé                    |
-| `F8`               | Mode sombre                     |
-| `F9`               | Afficher/masquer panneau latéral|
-| `Ctrl+M`           | Voir les métadonnées            |
-| `Ctrl+Shift+M`     | Générer les métadonnées         |
+| `F8`               | Afficher/masquer panneau latéral|
+| `F9`               | Thème suivant (dont Sombre)     |
+| `F10`              | Largeur de contenu suivante     |
 | `Ctrl++`           | Zoom avant                      |
 | `Ctrl+-`           | Zoom arrière                    |
 | `Ctrl+0`           | Zoom normal                     |
+
+### Outils
+
+| Raccourci          | Action                          |
+|--------------------|---------------------------------|
+| `Ctrl+Shift+M`     | Modifier les métadonnées        |

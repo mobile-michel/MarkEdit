@@ -74,7 +74,7 @@ La ligne de remplacement apparaît sous la barre de recherche :
 - **Remplacer** — remplace l'occurrence courante
 - **Tout remplacer** — remplace toutes les occurrences dans le document
 
-## Panneau latéral `F9`
+## Panneau latéral `F8`
 
 Le panneau latéral (ancrable à gauche ou à droite) regroupe deux sections :
 
@@ -93,7 +93,7 @@ Liste les titres de niveau 1 (`#`) et 2 (`##`) du document. Un clic sur un titre
 
 ### Thèmes `Outils → Thème`
 
-Quatre thèmes de présentation pour le mode Affichage :
+Cinq thèmes de présentation, sélectionnables comme un groupe exclusif (un seul actif à la fois) :
 
 | Thème | Police | Fond | Usage |
 |-------|--------|------|-------|
@@ -101,6 +101,9 @@ Quatre thèmes de présentation pour le mode Affichage :
 | **Minimaliste** | System UI | Blanc | Documents épurés |
 | **Sérif** | Georgia | Papier chaud | Articles, prose |
 | **Compact** | Segoe UI | Blanc | Documents denses |
+| **Sombre** | Segoe UI | Sombre (Catppuccin Mocha) | Travail en faible luminosité |
+
+Sélectionner **Sombre** bascule l'ensemble de l'interface (fenêtre, éditeur, panneau latéral) et le rendu vers ce thème sombre ; la coloration syntaxique de l'éditeur s'adapte également. `F9` passe au thème suivant dans cette liste (y compris Sombre), pratique pour basculer rapidement au clavier sans ouvrir le menu.
 
 ### Largeur du contenu `Outils → Largeur`
 
@@ -111,11 +114,9 @@ Quatre thèmes de présentation pour le mode Affichage :
 | Large | 1100 px | Tableaux et contenus larges |
 | Pleine largeur | Aucune limite | Dashboards, données |
 
-Les tableaux et blocs de code trop larges défilent horizontalement quel que soit le réglage de largeur.
+`F10` passe à la largeur suivante dans cette liste. Les tableaux et blocs de code trop larges défilent horizontalement quel que soit le réglage de largeur.
 
-### Mode sombre `F8`
-
-Bascule l'interface et le rendu vers un thème sombre (Catppuccin Mocha). La coloration syntaxique de l'éditeur s'adapte également.
+Un changement de thème ou de largeur préserve la position de défilement actuelle dans la vue rendue.
 
 ## Zoom
 
@@ -149,44 +150,104 @@ N mots · N car. · ~N min
 
 Le temps de lecture est estimé à 200 mots par minute.
 
+## Aide au formatage Markdown
+
+En mode Édition ou Partagé, une mini barre d'icônes apparaît au-dessus de l'éditeur ; chaque icône affiche son raccourci entre parenthèses au survol.
+
+### Raccourcis de formatage
+
+| Raccourci | Action |
+|-----------|--------|
+| `Ctrl+B` | Gras |
+| `Ctrl+I` | Italique |
+| `Ctrl+Shift+X` | Barré |
+| `Ctrl+Shift+C` | Code inline |
+| `Ctrl+Shift+H` | Surligné (`==texte==`) |
+| `Ctrl+K` | Lien |
+| `Ctrl+Shift+8` | Liste à puces |
+| `Ctrl+Shift+7` | Liste numérotée |
+| `Ctrl+Shift+T` | Liste de tâches |
+| `Ctrl+Shift+9` | Citation |
+
+Ces actions entourent le texte sélectionné (ou l'insèrent au point du curseur si rien n'est sélectionné) et fonctionnent comme des **interrupteurs** : les réappliquer sur une sélection déjà formatée retire le formatage.
+
+### Bloc de code avec choix du langage
+
+Le bouton **Code ▾** de la mini barre d'outils ouvre un menu de langages (Python, JavaScript, Bash, JSON, HTML, CSS, SQL…). En sélectionner un insère un bloc fencé avec la balise ouvrante et fermante, curseur prêt à taper le code (ou le contenu sélectionné y est déplacé).
+
+### Continuation automatique des listes
+
+Appuyer sur `Entrée` dans une liste à puces, numérotée ou de tâches insère automatiquement le bon préfixe sur la ligne suivante (en incrémentant les listes numérotées). Appuyer sur `Entrée` sur un élément de liste vide en sort proprement (le préfixe est retiré au lieu d'ajouter une nouvelle puce).
+
+### Auto-fermeture
+
+- Taper `*`, `_`, `` ` ``, `[` ou `(` insère automatiquement le caractère de fermeture correspondant (ou entoure la sélection existante).
+- Taper `>` pour fermer une balise HTML ouverte (ex. `<div>`) insère automatiquement la balise fermante correspondante ; les éléments auto-fermants (`<br>`, `<img>`…) et les balises déjà auto-fermées (`<img/>`) ne sont pas affectés.
+
+### Indentation automatique
+
+Appuyer sur `Entrée` conserve l'indentation de la ligne précédente, utile notamment pour l'édition de YAML. Dans un bloc de code (ex. ` ```css `), taper `{` insère une ligne indentée avec `}` en dessous, sans affecter la syntaxe d'attributs Markdown (`{#id .classe}`) en dehors des blocs de code.
+
+## Cases à cocher interactives
+
+En mode Affichage ou Partagé, cliquer sur une case à cocher d'une liste de tâches bascule directement `[ ]` / `[x]` dans le document source — pas besoin de repasser en mode Édition.
+
 ## Métadonnées
 
 Le format de métadonnées est celui de l'extension `meta` de Python-Markdown : des lignes `Clé: valeur` en tête du fichier, avant tout contenu, séparées du reste par une ligne vide.
 
+### Champs reconnus et ordre d'affichage
+
+| Champ | Libellé affiché | Description |
+|-------|------------------|-------------|
+| `type` | Type | note / tâche / journal / référence (liste fermée) |
+| `title` | Titre | Titre du document |
+| `description` | Description | Résumé en une phrase |
+| `author` | Auteur | Nom de l'auteur |
+| `tags` | Tags | Liste de mots-clés séparés par des virgules |
+| `created` | Créé | Date de création |
+| `timestamp` | Mis à jour | Date de dernière modification |
+
+L'ancien champ `updated` reste reconnu et affiché sous le même libellé « Mis à jour », pour les documents créés avant l'introduction de `timestamp`.
+
 ### Exemple de bloc de métadonnées
 
 ```
+Type: note
 Title: Mon document
-Author: Prénom Nom
-Created: 2026-01-15
-Updated: 2026-04-27
-Tags: rapport, projet, draft
 Description: Résumé du contenu.
+Author: Prénom Nom
+Tags: rapport, projet, draft
+Created: 2026-01-15
+Timestamp: 2026-07-01
 
 # Premier titre
 ...
 ```
 
-### Générer les métadonnées `Ctrl+Shift+M`
+### Modifier les métadonnées `Ctrl+Shift+M`
 
-Ouvre un formulaire pré-rempli :
+Ouvre un formulaire pré-rempli, dans l'ordre du tableau ci-dessus :
 
 | Champ | Source par défaut |
 |-------|-------------------|
+| Type | Liste déroulante fermée (note / tâche / journal / référence), vide par défaut |
 | Titre | Nom du fichier (reformaté) |
-| Auteur | Dernier auteur saisi ou `git config user.name` |
-| Créé le | Date de création du fichier (`st_birthtime` si disponible, sinon date de modification) |
-| Mis à jour le | Date de dernière modification du fichier (`st_mtime`) |
-| Tags | Vide (virgule-séparés) |
 | Description | Vide |
+| Auteur | Dernier auteur saisi ou `git config user.name` |
+| Tags | Vide (virgule-séparés) |
+| Créé le | Date de création du fichier (`st_birthtime` si disponible, sinon date de modification) |
+| Mis à jour le | Date de dernière modification du fichier (`st_mtime`), ou valeur existante de `timestamp`/`updated` |
 
 Si un bloc de métadonnées existe déjà, ses valeurs sont reprises dans le formulaire. À la validation, il est remplacé.
 
 L'auteur saisi est mémorisé pour les sessions suivantes.
 
-### Voir les métadonnées `Ctrl+M`
+## Menu Aide
 
-Affiche un tableau de toutes les métadonnées du document. Les champs avec plusieurs valeurs (ex. tags) sont présentés sous forme de **badges** colorés.
+- **Tutoriel…** — ouvre ce guide directement dans l'application
+- **Référence Markdown…** — ouvre le document de référence des syntaxes prises en charge
+- **À propos de MarkEdit…** — affiche le nom, la version et l'auteur de l'application
 
 ## Persistance entre sessions
 
@@ -235,14 +296,26 @@ La coloration syntaxique des blocs de code utilise **Pygments** et supporte des 
 | `Ctrl+Q` | Quitter |
 | `Ctrl+F` | Rechercher |
 | `Ctrl+H` | Remplacer |
+| `Ctrl+B` | Gras |
+| `Ctrl+I` | Italique |
+| `Ctrl+Shift+X` | Barré |
+| `Ctrl+Shift+C` | Code |
+| `Ctrl+Shift+H` | Surligné |
+| `Ctrl+K` | Lien |
+| `Ctrl+Shift+8` | Liste à puces |
+| `Ctrl+Shift+7` | Liste numérotée |
+| `Ctrl+Shift+T` | Liste de tâches |
+| `Ctrl+Shift+9` | Citation |
 | `F5` | Mode Affichage |
 | `F6` | Mode Édition |
 | `F7` | Mode Partagé |
-| `F8` | Mode sombre |
-| `F9` | Panneau latéral |
-| `Ctrl+M` | Voir les métadonnées |
-| `Ctrl+Shift+M` | Générer les métadonnées |
+| `F8` | Panneau latéral |
+| `F9` | Thème suivant |
+| `F10` | Largeur suivante |
+| `Ctrl+Shift+M` | Modifier les métadonnées |
 | `Ctrl++` | Zoom avant |
 | `Ctrl+-` | Zoom arrière |
 | `Ctrl+0` | Zoom normal |
 | `Échap` | Fermer la recherche |
+
+Chaque icône de la barre d'outils affiche son raccourci entre parenthèses au survol.
