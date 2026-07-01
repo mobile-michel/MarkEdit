@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLabel, QCheckBox,
     QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox,
     QFormLayout, QDockWidget, QListWidget, QListWidgetItem, QMenu, QFrame, QTextBrowser,
-    QStyle,
+    QStyle, QGraphicsOpacityEffect,
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -1071,7 +1071,10 @@ class MarkdownApp(QMainWindow):
         self._statusbar = QStatusBar()
         self.setStatusBar(self._statusbar)
         self._stats_label = QLabel()
-        self._stats_label.setStyleSheet("color: #666; margin-right: 8px;")
+        self._stats_label.setStyleSheet("margin-right: 8px;")
+        opacity = QGraphicsOpacityEffect(self._stats_label)
+        opacity.setOpacity(0.7)
+        self._stats_label.setGraphicsEffect(opacity)
         self._statusbar.addPermanentWidget(self._stats_label)
 
     def _connect_signals(self):
