@@ -85,13 +85,6 @@ if command -v update-desktop-database &> /dev/null; then
     update-desktop-database "$HOME/.local/share/applications"
 fi
 
-# Créer un lien symbolique pour le script d'installation
-if [ -f "markedit.sh" ]; then
-    echo "🔗 Création du lien symbolique pour markedit.sh..."
-    cp "markedit.sh" "$INSTALL_DIR/"
-    chmod +x "$INSTALL_DIR/markedit.sh"
-fi
-
 echo ""
 echo "================================"
 echo "✨ Installation terminée!"
