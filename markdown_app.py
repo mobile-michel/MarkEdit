@@ -1577,12 +1577,14 @@ class MarkdownApp(QMainWindow):
             self._editor.setVisible(True)
             self._act_edit.setChecked(True)
             self._statusbar.showMessage("Mode : Édition")
+            self._editor.setFocus()
         else:  # split
             self._render()
             self._web_view.setVisible(True)
             self._editor.setVisible(True)
             self._act_split.setChecked(True)
             self._statusbar.showMessage("Mode : Partagé")
+            self._editor.setFocus()
         if self._search_bar.isVisible() and self._search_input.text():
             self._on_search_text_changed()
 
