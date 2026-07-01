@@ -400,7 +400,7 @@ class CodeEditor(QPlainTextEdit):
         super().__init__(parent)
         self._line_number_area = LineNumberArea(self)
         self._search_selections = []
-        self._current_line_color = QColor("#dce6f7")
+        self._current_line_color = QColor("#93c5fd")
 
         self.blockCountChanged.connect(self._update_line_number_area_width)
         self.updateRequest.connect(self._update_line_number_area)
@@ -1592,7 +1592,7 @@ class MarkdownApp(QMainWindow):
         self._dark_mode = checked
         self._highlighter.set_dark(checked)
         self._editor.set_current_line_color(
-            QColor("#14141f") if checked else QColor("#dce6f7")
+            QColor("#14141f") if checked else QColor("#93c5fd")
         )
         self._apply_toc_style()
         if checked:
