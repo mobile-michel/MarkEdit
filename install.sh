@@ -52,6 +52,11 @@ echo "📋 Copie de l'application MarkEdit..."
 cp "$SOURCE_APP" "$INSTALL_DIR/"
 echo "✅ Application copiée"
 
+# Copier la documentation intégrée (menu Aide)
+echo "📋 Copie de la documentation..."
+cp "$(pwd)/tutoriel.md" "$(pwd)/markdown-reference.md" "$INSTALL_DIR/"
+echo "✅ Documentation copiée"
+
 # Installer l'icône dans le thème d'icônes de l'utilisateur
 if [ -d "icons" ]; then
     echo "🎨 Installation de l'icône..."

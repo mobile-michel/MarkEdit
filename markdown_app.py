@@ -93,6 +93,9 @@ _PYGMENTS_CSS_DARK  = HtmlFormatter(style="monokai").get_style_defs(".highlight"
 
 MAX_RECENT_FILES = 10
 
+APP_VERSION = "3.0"
+APP_AUTHOR = "Michel Maillard"
+
 # ---------------------------------------------------------------------------
 # Largeurs de contenu
 # ---------------------------------------------------------------------------
@@ -1031,6 +1034,7 @@ class MarkdownApp(QMainWindow):
 
     def __init__(self, file_path=None):
         super().__init__()
+        self.setWindowIcon(QIcon.fromTheme("markedit"))
         self._current_file = None
         self._modified = False
         self._mode = "edit"
@@ -1481,6 +1485,26 @@ class MarkdownApp(QMainWindow):
         widths_menu.addSeparator()
         widths_menu.addAction(self._act_cycle_width)
 
+        # --- Aide ---
+        help_menu = bar.addMenu("&Aide")
+
+        self._act_tutorial = QAction("&Tutoriel…", self)
+        self._act_tutorial.setIcon(_icon("help-contents", QStyle.StandardPixmap.SP_FileDialogInfoView))
+        self._act_tutorial.setObjectName("tutorial")
+        help_menu.addAction(self._act_tutorial)
+
+        self._act_md_reference = QAction("&Référence Markdown…", self)
+        self._act_md_reference.setIcon(_icon("text-markdown", QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        self._act_md_reference.setObjectName("md_reference")
+        help_menu.addAction(self._act_md_reference)
+
+        help_menu.addSeparator()
+
+        self._act_about = QAction("À &propos de MarkEdit…", self)
+        self._act_about.setIcon(_icon("help-about", QStyle.StandardPixmap.SP_MessageBoxInformation))
+        self._act_about.setObjectName("about")
+        help_menu.addAction(self._act_about)
+
     # Ordre par défaut de la toolbar (noms d'objectName, "---" = séparateur)
     _DEFAULT_TOOLBAR = [
         "new", "open", "save", "---",
@@ -1522,6 +1546,9 @@ class MarkdownApp(QMainWindow):
             "numbered_list": self._act_numbered_list,
             "task_list":    self._act_task_list,
             "quote":        self._act_quote,
+            "about":        self._act_about,
+            "tutorial":     self._act_tutorial,
+            "md_reference": self._act_md_reference,
         }
         # Thèmes
         _theme_objnames = {
@@ -1645,6 +1672,9 @@ class MarkdownApp(QMainWindow):
         self._act_search.triggered.connect(self._toggle_search)
         self._act_replace.triggered.connect(self._toggle_replace)
         self._act_customize_tb.triggered.connect(self._on_customize_toolbar)
+        self._act_about.triggered.connect(self._on_about)
+        self._act_tutorial.triggered.connect(lambda: self._open_bundled_doc("tutoriel.md"))
+        self._act_md_reference.triggered.connect(lambda: self._open_bundled_doc("markdown-reference.md"))
 
         self._act_bold.triggered.connect(self._editor.format_bold)
         self._act_italic.triggered.connect(self._editor.format_italic)
@@ -2757,6 +2787,55 @@ class MarkdownApp(QMainWindow):
         for v in values:
             tokens.extend(t.strip() for t in v.split(",") if t.strip())
         return tokens
+
+    # -----------------------------------------------------------------------
+    # À propos
+    # -----------------------------------------------------------------------
+
+    def _open_bundled_doc(self, filename):
+        if not self._maybe_save():
+            return
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(base_dir, filename)
+        if not os.path.isfile(path):
+            QMessageBox.warning(
+                self, "Fichier introuvable",
+                f"Le fichier {filename} n'a pas été trouvé dans le répertoire de l'application."
+            )
+            return
+        self._open_file(path)
+
+    def _on_about(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("À propos de MarkEdit")
+        dlg.setMinimumWidth(360)
+
+        vl = QVBoxLayout(dlg)
+        hl = QHBoxLayout()
+        vl.addLayout(hl)
+
+        icon_label = QLabel()
+        icon = QIcon.fromTheme("markedit")
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(64, 64))
+        hl.addWidget(icon_label)
+
+        text_label = QLabel(
+            f"<h2 style='margin:0;'>MarkEdit</h2>"
+            f"<p style='margin:2px 0;'>Version {APP_VERSION}</p>"
+            f"<p style='margin:2px 0;'>Éditeur Markdown avec aperçu en temps réel.</p>"
+            f"<p style='margin:10px 0 0 0;'>© {date.today().year} {APP_AUTHOR}</p>"
+        )
+        text_label.setTextFormat(Qt.TextFormat.RichText)
+        text_label.setWordWrap(True)
+        hl.addWidget(text_label, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dlg.accept)
+        buttons.accepted.connect(dlg.accept)
+        vl.addWidget(buttons)
+
+        dlg.exec()
 
     # -----------------------------------------------------------------------
     # Personnalisation de la barre d'outils
