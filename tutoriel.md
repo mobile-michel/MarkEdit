@@ -1,13 +1,13 @@
-Title: Guide complet — Markdown Viewer
+Title: Guide complet — MarkEdit
 Author: Michel Maillard
 Created: 2026-04-27
-Updated: 2026-04-27
+Updated: 2026-07-01
 Tags: tutoriel, guide, markdown, référence
 Description: Documentation complète de toutes les fonctionnalités de l'application.
 
-# Guide complet — Markdown Viewer
+# Guide complet — MarkEdit
 
-Markdown Viewer est un éditeur et visualiseur de fichiers Markdown avec rendu HTML en temps réel, gestion des métadonnées, export et impression.
+MarkEdit est un éditeur et visualiseur de fichiers Markdown avec rendu HTML en temps réel, gestion des métadonnées, export et impression.
 
 ## Modes d'affichage
 

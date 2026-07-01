@@ -1,13 +1,13 @@
 ---
 title: Référence Markdown
-author: Markdown Viewer
-date: 2026-04-30
+author: MarkEdit
+date: 2026-07-01
 tags: référence, markdown, syntaxe
 ---
 
 # Référence Markdown
 
-Ce document recense toutes les syntaxes prises en charge par **Markdown Viewer**, basé sur la bibliothèque **Python-Markdown 3.5.2** et **PyMdown Extensions 10.21** avec les extensions activées listées ci-dessous.
+Ce document recense toutes les syntaxes prises en charge par **MarkEdit**, basé sur la bibliothèque **Python-Markdown 3.10.2** et **PyMdown Extensions 11.0** avec les extensions activées listées ci-dessous.
 
 ---
 
@@ -404,13 +404,23 @@ Contenu masqué par défaut.
 
 | Raccourci          | Action                          |
 |--------------------|---------------------------------|
+| `Ctrl+N`           | Nouveau fichier                 |
 | `Ctrl+O`           | Ouvrir un fichier               |
 | `Ctrl+S`           | Enregistrer                     |
 | `Ctrl+Shift+S`     | Enregistrer sous                |
+| `Ctrl+E`           | Exporter en HTML                |
+| `Ctrl+Shift+E`     | Exporter en PDF                 |
 | `Ctrl+P`           | Imprimer                        |
-| `Ctrl+E`           | Basculer mode édition           |
+| `Ctrl+Q`           | Quitter                         |
 | `Ctrl+F`           | Rechercher                      |
+| `Ctrl+H`           | Remplacer                       |
+| `F5`               | Mode Affichage                  |
+| `F6`               | Mode Édition                    |
+| `F7`               | Mode Partagé                    |
+| `F8`               | Mode sombre                     |
+| `F9`               | Afficher/masquer panneau latéral|
 | `Ctrl+M`           | Voir les métadonnées            |
 | `Ctrl+Shift+M`     | Générer les métadonnées         |
-| `F9`               | Afficher/masquer panneau latéral|
-| `F11`              | Plein écran                     |
+| `Ctrl++`           | Zoom avant                      |
+| `Ctrl+-`           | Zoom arrière                    |
+| `Ctrl+0`           | Zoom normal                     |
