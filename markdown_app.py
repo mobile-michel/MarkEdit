@@ -4,8 +4,10 @@
 import sys
 import os
 import re
+import html as html_lib
 import tempfile
 import subprocess
+import urllib.parse
 from datetime import date, datetime
 
 from PyQt6.QtCore import (
@@ -31,6 +33,7 @@ from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtWebEngineCore import QWebEnginePage
 
 import markdown
+from markdown.extensions.toc import slugify as _toc_slugify
 from pygments.formatters import HtmlFormatter
 
 # ---------------------------------------------------------------------------
@@ -1458,6 +1461,33 @@ class MarkdownApp(QMainWindow):
             html, flags=re.DOTALL,
         )
 
+    @staticmethod
+    def _fix_internal_links(html, toc_tokens):
+        """Réécrit les liens internes (#Titre) vers l'ancre réellement générée
+        par l'extension toc, qui supprime accents et caractères spéciaux."""
+        ids = set()
+
+        def collect(tokens):
+            for t in tokens:
+                ids.add(t["id"])
+                collect(t.get("children", []))
+
+        collect(toc_tokens)
+        if not ids:
+            return html
+
+        def repl(m):
+            fragment = m.group(1)
+            if fragment in ids:
+                return m.group(0)
+            decoded = html_lib.unescape(urllib.parse.unquote(fragment))
+            slug = _toc_slugify(decoded, "-")
+            if slug in ids:
+                return f'href="#{slug}"'
+            return m.group(0)
+
+        return re.sub(r'href="#([^"]*)"', repl, html)
+
     def _render(self):
         source = self._editor.toPlainText()
         md = markdown.Markdown(
@@ -1465,6 +1495,7 @@ class MarkdownApp(QMainWindow):
             extension_configs=MARKDOWN_EXT_CONFIGS,
         )
         body = md.convert(source)
+        body = self._fix_internal_links(body, getattr(md, "toc_tokens", []))
         body = self._render_task_lists(body)
         body = self._wrap_tables(body)
         html = HTML_TEMPLATE.format(css=self._get_css(), body=body)
@@ -1520,6 +1551,7 @@ class MarkdownApp(QMainWindow):
             extension_configs=MARKDOWN_EXT_CONFIGS,
         )
         body = md.convert(source)
+        body = self._fix_internal_links(body, getattr(md, "toc_tokens", []))
         body = self._render_task_lists(body)
         body = self._wrap_tables(body)
         return HTML_TEMPLATE.format(css=self._get_css(), body=body)
