@@ -52,6 +52,19 @@ echo "📋 Copie de l'application MarkEdit..."
 cp "$SOURCE_APP" "$INSTALL_DIR/"
 echo "✅ Application copiée"
 
+# Installer l'icône dans le thème d'icônes de l'utilisateur
+if [ -d "icons" ]; then
+    echo "🎨 Installation de l'icône..."
+    for size in 16 22 24 32 48 64 128 256 512; do
+        icon_dir="$HOME/.local/share/icons/hicolor/${size}x${size}/apps"
+        mkdir -p "$icon_dir"
+        cp "icons/markedit-${size}.png" "$icon_dir/markedit.png"
+    done
+    mkdir -p "$HOME/.local/share/icons/hicolor/scalable/apps"
+    cp "icons/markedit.svg" "$HOME/.local/share/icons/hicolor/scalable/apps/markedit.svg"
+    echo "✅ Icône installée"
+fi
+
 # Créer le fichier .desktop
 echo "🎯 Création du lanceur desktop..."
 mkdir -p "$HOME/.local/share/applications"
@@ -63,7 +76,7 @@ Type=Application
 Name=MarkEdit
 Comment=Éditeur Markdown avec aperçu en temps réel
 Exec=/home/michel/.local/opt/MarkEdit/.venv/bin/python3 /home/michel/.local/opt/MarkEdit/markdown_app.py %f
-Icon=text-editor
+Icon=markedit
 Categories=Office;Utility;TextEditor;
 Terminal=false
 MimeType=text/markdown;text/plain;

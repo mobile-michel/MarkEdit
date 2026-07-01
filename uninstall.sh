@@ -37,6 +37,14 @@ else
     echo "ℹ️  Lanceur non trouvé"
 fi
 
+# Supprimer l'icône
+echo "🗑️  Suppression de l'icône..."
+for size in 16 22 24 32 48 64 128 256 512; do
+    rm -f "$HOME/.local/share/icons/hicolor/${size}x${size}/apps/markedit.png"
+done
+rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/markedit.svg"
+echo "✅ Icône supprimée"
+
 # Mettre à jour la base de données des applications
 if command -v update-desktop-database &> /dev/null; then
     echo "🔄 Mise à jour de la base de données des applications..."

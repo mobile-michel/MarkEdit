@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4d92f7"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)"/>
+  <rect x="4.5" y="4.5" width="119" height="119" rx="25.5" fill="none" stroke="#1e3a8a" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- Marque Markdown "M" -->
+  <text x="20" y="86" font-family="'DejaVu Sans','Noto Sans',Arial,sans-serif" font-weight="800" font-size="60" fill="#ffffff">M</text>
+
+  <!-- Chevron (accent du badge Markdown) -->
+  <path d="M80 50 L94 50 L87 61 Z" fill="#ffffff"/>
+
+  <!-- Badge crayon (édition) -->
+  <circle cx="94" cy="94" r="24" fill="#ffffff"/>
+  <circle cx="94" cy="94" r="24" fill="none" stroke="#1e3a8a" stroke-width="1.5" opacity="0.2"/>
+  <g transform="translate(80,80) rotate(45)">
+    <rect x="0" y="10" width="26" height="7" rx="1.5" fill="#f59e0b"/>
+    <rect x="0" y="10" width="6" height="7" fill="#d97706"/>
+    <polygon points="26,10 33,13.5 26,17" fill="#374151"/>
+  </g>
+</svg>
