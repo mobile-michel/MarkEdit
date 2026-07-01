@@ -17,16 +17,16 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
     QTextCharFormat, QColor, QTextDocument, QSyntaxHighlighter, QPalette, QTextFormat,
-    QPixmap,
+    QPixmap, QFont, QTextCursor,
 )
 from PyQt6.QtPdf import QPdfDocument
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QSplitter, QPlainTextEdit, QTextEdit,
     QFileDialog, QMessageBox, QToolBar, QStatusBar, QMenuBar,
     QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QPushButton, QLabel, QCheckBox,
-    QDialog, QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox,
+    QDialog, QDialogButtonBox,
     QFormLayout, QDockWidget, QListWidget, QListWidgetItem, QMenu, QFrame, QTextBrowser,
-    QStyle, QGraphicsOpacityEffect,
+    QStyle, QGraphicsOpacityEffect, QComboBox, QToolButton,
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -51,6 +51,39 @@ MARKDOWN_EXT_CONFIGS = {
     "codehilite": {"css_class": "highlight", "guess_lang": True},
     "pymdownx.tilde": {"subscript": False},
 }
+
+# Ordre canonique d'affichage des métadonnées et leurs libellés français.
+# "updated" est conservé pour l'affichage des documents existants antérieurs
+# au renommage du champ en "timestamp".
+METADATA_ORDER = [
+    "type", "title", "description", "author", "tags", "created",
+    "timestamp", "updated",
+]
+METADATA_LABELS = {
+    "type": "Type", "title": "Titre", "description": "Description",
+    "author": "Auteur", "tags": "Tags", "created": "Créé",
+    "timestamp": "Mis à jour", "updated": "Mis à jour",
+}
+METADATA_TYPES = ["note", "tâche", "journal", "référence"]
+
+# Langages proposés pour l'insertion d'un bloc de code (libellé, identifiant fencé).
+CODE_LANGUAGES = [
+    ("Texte", ""), ("Python", "python"), ("JavaScript", "javascript"),
+    ("TypeScript", "typescript"), ("Bash", "bash"), ("JSON", "json"),
+    ("YAML", "yaml"), ("HTML", "html"), ("CSS", "css"), ("SQL", "sql"),
+    ("Markdown", "markdown"), ("C", "c"), ("C++", "cpp"), ("Java", "java"),
+    ("Go", "go"), ("Rust", "rust"), ("PHP", "php"), ("Ruby", "ruby"),
+]
+
+
+def _sorted_meta_items(meta):
+    def sort_key(item):
+        key = item[0].lower()
+        try:
+            return (METADATA_ORDER.index(key), key)
+        except ValueError:
+            return (len(METADATA_ORDER), key)
+    return sorted(meta.items(), key=sort_key)
 
 _PYGMENTS_CSS       = HtmlFormatter(style="default").get_style_defs(".highlight")
 _PYGMENTS_CSS_DARK  = HtmlFormatter(style="monokai").get_style_defs(".highlight")
@@ -302,6 +335,9 @@ th, td { word-wrap:break-word; overflow-wrap:break-word; }
 @media print { body { max-width:none !important; } .table-scroll { overflow:visible; } }
 """)
 
+THEMES["Sombre"] = lambda: DARK_CSS
+
+
 def _icon(theme_name, fallback=None):
     icon = QIcon.fromTheme(theme_name)
     if icon.isNull() and fallback is not None:
@@ -335,7 +371,7 @@ def _width_icon(fraction: float) -> QIcon:
     return QIcon(pix)
 
 
-def _theme_icon(accent: str, serif: bool = False, dense: bool = False) -> QIcon:
+def _theme_icon(accent: str, serif: bool = False, dense: bool = False, dark: bool = False) -> QIcon:
     """Icône thème : page miniature avec lignes stylisées."""
     S = 20
     pix = QPixmap(S, S)
@@ -343,8 +379,8 @@ def _theme_icon(accent: str, serif: bool = False, dense: bool = False) -> QIcon:
     p = QPainter(pix)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     # Fond page
-    p.setPen(QColor("#bbb"))
-    p.setBrush(QColor("#fafafa"))
+    p.setPen(QColor("#585b70" if dark else "#bbb"))
+    p.setBrush(QColor("#1e1e2e" if dark else "#fafafa"))
     p.drawRoundedRect(0, 0, S - 1, S - 1, 2, 2)
     p.setPen(Qt.PenStyle.NoPen)
     # Titre (barre colorée, plus épaisse si serif)
@@ -355,7 +391,7 @@ def _theme_icon(accent: str, serif: bool = False, dense: bool = False) -> QIcon:
     gap = 2 if dense else 3
     line_h = 1
     y = 3 + title_h + gap
-    p.setBrush(QColor("#ccc"))
+    p.setBrush(QColor("#45475a" if dark else "#ccc"))
     while y + line_h <= S - 3:
         p.drawRect(2, y, S - 4, line_h)
         y += line_h + gap
@@ -484,6 +520,346 @@ class CodeEditor(QPlainTextEdit):
     def setExtraSelections(self, selections):
         self._search_selections = selections
         self._refresh_selections()
+
+    # --- Formatage Markdown ---
+
+    _PAIRS = {"*": "*", "_": "_", "`": "`", "[": "]", "(": ")"}
+    _RE_TASK = re.compile(r'^(\s*)([-*+])\s+\[([ xX])\]\s*(.*)$')
+    _RE_BULLET = re.compile(r'^(\s*)([-*+])\s+(.*)$')
+    _RE_NUMBERED = re.compile(r'^(\s*)(\d+)([.)])\s+(.*)$')
+    _RE_LINK = re.compile(r'\[([^\[\]]*)\]\(([^()]*)\)')
+    _RE_OPEN_TAG = re.compile(r"<([a-zA-Z][a-zA-Z0-9]*)((?:\s+[^<>]*)?)$")
+    _VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+
+    def wrap_selection(self, prefix, suffix=None):
+        suffix = prefix if suffix is None else suffix
+        cursor = self.textCursor()
+        if not cursor.hasSelection():
+            pos = cursor.position()
+            cursor.insertText(f"{prefix}{suffix}")
+            cursor.setPosition(pos + len(prefix))
+            self.setTextCursor(cursor)
+            return
+
+        start, end = cursor.selectionStart(), cursor.selectionEnd()
+        text = cursor.selectedText()
+        full = self.document().toPlainText()
+
+        # Bascule : la sélection inclut déjà les marqueurs -> on les retire.
+        if (
+            len(text) >= len(prefix) + len(suffix)
+            and text.startswith(prefix) and text.endswith(suffix)
+        ):
+            inner = text[len(prefix):len(text) - len(suffix)]
+            cursor.insertText(inner)
+            cursor.setPosition(start)
+            cursor.setPosition(start + len(inner), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cursor)
+            return
+
+        # Bascule : les marqueurs entourent la sélection -> on les retire.
+        before = full[max(0, start - len(prefix)):start]
+        after = full[end:end + len(suffix)]
+        if before == prefix and after == suffix:
+            cursor.setPosition(start - len(prefix))
+            cursor.setPosition(end + len(suffix), QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText(text)
+            cursor.setPosition(start - len(prefix))
+            cursor.setPosition(start - len(prefix) + len(text), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cursor)
+            return
+
+        # Pas encore formaté -> on entoure.
+        cursor.insertText(f"{prefix}{text}{suffix}")
+        cursor.setPosition(start + len(prefix))
+        cursor.setPosition(end + len(prefix), QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+
+    def insert_link(self):
+        cursor = self.textCursor()
+        full = self.document().toPlainText()
+        sel_start = cursor.selectionStart()
+        sel_end = cursor.selectionEnd()
+        probe_pos = sel_start if cursor.hasSelection() else cursor.position()
+
+        # Bascule : le curseur/la sélection se trouve dans un lien existant,
+        # quel que soit ce qui est exactement sélectionné (texte, url, tout).
+        for m in self._RE_LINK.finditer(full):
+            if m.start() <= probe_pos <= m.end() and sel_end <= m.end():
+                inner = m.group(1)
+                unwrap = QTextCursor(self.document())
+                unwrap.setPosition(m.start())
+                unwrap.setPosition(m.end(), QTextCursor.MoveMode.KeepAnchor)
+                unwrap.insertText(inner)
+                unwrap.setPosition(m.start())
+                unwrap.setPosition(m.start() + len(inner), QTextCursor.MoveMode.KeepAnchor)
+                self.setTextCursor(unwrap)
+                return
+
+        if not cursor.hasSelection():
+            pos = cursor.position()
+            cursor.insertText("[texte](url)")
+            cursor.setPosition(pos + 1)
+            cursor.setPosition(pos + 1 + len("texte"), QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cursor)
+            return
+
+        text = cursor.selectedText()
+        cursor.insertText(f"[{text}](url)")
+        url_pos = sel_start + len(text) + 3
+        cursor.setPosition(url_pos)
+        cursor.setPosition(url_pos + 3, QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+
+    def _selected_block_range(self):
+        cursor = self.textCursor()
+        doc = self.document()
+        start = doc.findBlock(cursor.selectionStart()).blockNumber()
+        end = doc.findBlock(cursor.selectionEnd()).blockNumber()
+        return start, end
+
+    def apply_list_prefix(self, kind):
+        start, end = self._selected_block_range()
+        doc = self.document()
+        edit_cursor = self.textCursor()
+        edit_cursor.beginEditBlock()
+        counter = 1
+        for bn in range(start, end + 1):
+            block = doc.findBlockByNumber(bn)
+            text = block.text()
+            bcur = QTextCursor(block)
+            if kind == "task":
+                m = re.match(r'^(\s*)[-*+]\s+\[[ xX]\]\s+', text)
+            elif kind == "numbered":
+                m = re.match(r'^(\s*)\d+[.)]\s+', text)
+            else:
+                m = re.match(r'^(\s*)[-*+]\s+', text)
+            if m:
+                bcur.setPosition(block.position())
+                bcur.setPosition(block.position() + m.end(), QTextCursor.MoveMode.KeepAnchor)
+                bcur.removeSelectedText()
+            else:
+                bcur.setPosition(block.position())
+                if kind == "task":
+                    bcur.insertText("- [ ] ")
+                elif kind == "numbered":
+                    bcur.insertText(f"{counter}. ")
+                    counter += 1
+                else:
+                    bcur.insertText("- ")
+        edit_cursor.endEditBlock()
+
+    def format_quote(self):
+        start, end = self._selected_block_range()
+        doc = self.document()
+        edit_cursor = self.textCursor()
+        edit_cursor.beginEditBlock()
+        for bn in range(start, end + 1):
+            block = doc.findBlockByNumber(bn)
+            text = block.text()
+            bcur = QTextCursor(block)
+            if text.startswith("> "):
+                strip_len = 2
+            elif text.startswith(">"):
+                strip_len = 1
+            else:
+                strip_len = 0
+            if strip_len:
+                bcur.setPosition(block.position())
+                bcur.setPosition(block.position() + strip_len, QTextCursor.MoveMode.KeepAnchor)
+                bcur.removeSelectedText()
+            else:
+                bcur.setPosition(block.position())
+                bcur.insertText("> ")
+        edit_cursor.endEditBlock()
+
+    def format_bold(self):
+        self.wrap_selection("**")
+
+    def format_italic(self):
+        self.wrap_selection("*")
+
+    def format_strikethrough(self):
+        self.wrap_selection("~~")
+
+    def format_code(self):
+        self.wrap_selection("`")
+
+    def format_mark(self):
+        self.wrap_selection("==")
+
+    def format_link(self):
+        self.insert_link()
+
+    def format_bullet_list(self):
+        self.apply_list_prefix("bullet")
+
+    def format_numbered_list(self):
+        self.apply_list_prefix("numbered")
+
+    def format_task_list(self):
+        self.apply_list_prefix("task")
+
+    def insert_code_block(self, language=""):
+        cursor = self.textCursor()
+        fence = "```"
+        doc = self.document()
+        start = cursor.selectionStart()
+        at_line_start = doc.findBlock(start).position() == start
+        prefix_nl = "" if at_line_start else "\n"
+
+        if cursor.hasSelection():
+            text = cursor.selectedText().replace(" ", "\n")
+            cursor.insertText(f"{prefix_nl}{fence}{language}\n{text}\n{fence}\n")
+            self.setTextCursor(cursor)
+        else:
+            header = f"{prefix_nl}{fence}{language}\n"
+            cursor.insertText(f"{header}\n{fence}\n")
+            cursor.setPosition(start + len(header))
+            self.setTextCursor(cursor)
+
+    # --- Continuation automatique des listes ---
+
+    def _clear_current_line(self):
+        cursor = self.textCursor()
+        cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+        cursor.removeSelectedText()
+
+    def _auto_indent_newline(self):
+        cursor = self.textCursor()
+        indent = re.match(r"[ \t]*", cursor.block().text()).group(0)
+        cursor.insertText("\n" + indent)
+        self.setTextCursor(cursor)
+
+    def _in_fenced_code_block(self):
+        current = self.textCursor().block()
+        count = 0
+        block = self.document().firstBlock()
+        while block.isValid() and block.blockNumber() < current.blockNumber():
+            if block.text().startswith("```"):
+                count += 1
+            block = block.next()
+        return count % 2 == 1
+
+    def _open_brace_block(self):
+        cursor = self.textCursor()
+        base_indent = re.match(r"[ \t]*", cursor.block().text()).group(0)
+        inner_indent = base_indent + "    "
+        start = cursor.position()
+        cursor.insertText(f"{{\n{inner_indent}\n{base_indent}}}")
+        cursor.setPosition(start + 2 + len(inner_indent))
+        self.setTextCursor(cursor)
+
+    def _try_continue_list(self):
+        cursor = self.textCursor()
+        block_text = cursor.block().text()
+
+        m = self._RE_TASK.match(block_text)
+        if m:
+            indent, marker, _, content = m.groups()
+            if not content.strip():
+                self._clear_current_line()
+                return True
+            cursor.insertText(f"\n{indent}{marker} [ ] ")
+            return True
+
+        m = self._RE_BULLET.match(block_text)
+        if m:
+            indent, marker, content = m.groups()
+            if not content.strip():
+                self._clear_current_line()
+                return True
+            cursor.insertText(f"\n{indent}{marker} ")
+            return True
+
+        m = self._RE_NUMBERED.match(block_text)
+        if m:
+            indent, num, punct, content = m.groups()
+            if not content.strip():
+                self._clear_current_line()
+                return True
+            cursor.insertText(f"\n{indent}{int(num) + 1}{punct} ")
+            return True
+
+        return False
+
+    # --- Fermeture automatique des balises HTML ---
+
+    def _try_close_html_tag(self):
+        cursor = self.textCursor()
+        pos = cursor.position()
+        before = self.document().toPlainText()[:pos]
+        m = self._RE_OPEN_TAG.search(before)
+        if not m:
+            return False
+        tag, attrs = m.group(1), m.group(2)
+        if tag.lower() in self._VOID_TAGS or attrs.rstrip().endswith("/"):
+            return False
+        cursor.insertText(">")
+        close_pos = cursor.position()
+        cursor.insertText(f"</{tag}>")
+        cursor.setPosition(close_pos)
+        self.setTextCursor(cursor)
+        return True
+
+    # --- Auto-fermeture des paires ---
+
+    def _try_pair_char(self, char):
+        closing = self._PAIRS[char]
+        cursor = self.textCursor()
+        if cursor.hasSelection():
+            start, end = cursor.selectionStart(), cursor.selectionEnd()
+            text = cursor.selectedText()
+            cursor.insertText(f"{char}{text}{closing}")
+            cursor.setPosition(start + 1)
+            cursor.setPosition(end + 1, QTextCursor.MoveMode.KeepAnchor)
+            self.setTextCursor(cursor)
+            return
+
+        if char == closing:
+            probe = QTextCursor(cursor)
+            probe.movePosition(QTextCursor.MoveOperation.Right, QTextCursor.MoveMode.KeepAnchor)
+            if probe.selectedText() == closing:
+                cursor.movePosition(QTextCursor.MoveOperation.Right)
+                self.setTextCursor(cursor)
+                return
+
+        pos = cursor.position()
+        cursor.insertText(f"{char}{closing}")
+        cursor.setPosition(pos + 1)
+        self.setTextCursor(cursor)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if not self.textCursor().hasSelection():
+                if self._try_continue_list():
+                    return
+                self._auto_indent_newline()
+                return
+            super().keyPressEvent(event)
+            return
+
+        text = event.text()
+        if text == ">" and not self.textCursor().hasSelection():
+            if self._try_close_html_tag():
+                return
+
+        if text == "{" and not self.textCursor().hasSelection() and self._in_fenced_code_block():
+            self._open_brace_block()
+            return
+
+        if (
+            text in self._PAIRS
+            and not event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)
+        ):
+            self._try_pair_char(text)
+            return
+
+        super().keyPressEvent(event)
 
 
 # ---------------------------------------------------------------------------
@@ -643,6 +1019,7 @@ class MarkdownApp(QMainWindow):
 
         self._setup_ui()
         self._setup_menus()
+        self._setup_format_toolbar()
         self._setup_toolbar()
         self._setup_statusbar()
         self._connect_signals()
@@ -676,9 +1053,15 @@ class MarkdownApp(QMainWindow):
 
         self._highlighter = MarkdownHighlighter(self._editor.document(), dark=False)
 
+        self._editor_container = QWidget()
+        self._editor_layout = QVBoxLayout(self._editor_container)
+        self._editor_layout.setContentsMargins(0, 0, 0, 0)
+        self._editor_layout.setSpacing(0)
+        self._editor_layout.addWidget(self._editor)
+
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.addWidget(self._web_view)
-        self._splitter.addWidget(self._editor)
+        self._splitter.addWidget(self._editor_container)
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 1)
 
@@ -848,6 +1231,79 @@ class MarkdownApp(QMainWindow):
         self._act_replace.setObjectName("replace")
         edit_menu.addAction(self._act_replace)
 
+        edit_menu.addSeparator()
+
+        # Formatage Markdown
+        self._act_bold = QAction("&Gras", self)
+        self._act_bold.setShortcut(QKeySequence("Ctrl+B"))
+        self._act_bold.setIcon(_icon("format-text-bold"))
+        self._act_bold.setObjectName("bold")
+        edit_menu.addAction(self._act_bold)
+
+        self._act_italic = QAction("&Italique", self)
+        self._act_italic.setShortcut(QKeySequence("Ctrl+I"))
+        self._act_italic.setIcon(_icon("format-text-italic"))
+        self._act_italic.setObjectName("italic")
+        edit_menu.addAction(self._act_italic)
+
+        self._act_strike = QAction("&Barré", self)
+        self._act_strike.setShortcut(QKeySequence("Ctrl+Shift+X"))
+        self._act_strike.setIcon(_icon("format-text-strikethrough"))
+        self._act_strike.setObjectName("strike")
+        edit_menu.addAction(self._act_strike)
+
+        self._act_code = QAction("&Code", self)
+        self._act_code.setShortcut(QKeySequence("Ctrl+Shift+C"))
+        self._act_code.setIcon(_icon("format-text-code"))
+        self._act_code.setObjectName("code")
+        edit_menu.addAction(self._act_code)
+
+        self._act_mark = QAction("Sur&ligné", self)
+        self._act_mark.setShortcut(QKeySequence("Ctrl+Shift+H"))
+        self._act_mark.setIcon(_icon("format-text-highlight"))
+        self._act_mark.setObjectName("mark")
+        edit_menu.addAction(self._act_mark)
+
+        self._act_link = QAction("&Lien…", self)
+        self._act_link.setShortcut(QKeySequence("Ctrl+K"))
+        self._act_link.setIcon(_icon("insert-link"))
+        self._act_link.setObjectName("link")
+        edit_menu.addAction(self._act_link)
+
+        self._act_bullet_list = QAction("Liste à &puces", self)
+        self._act_bullet_list.setShortcut(QKeySequence("Ctrl+Shift+8"))
+        self._act_bullet_list.setIcon(_icon("format-list-unordered"))
+        self._act_bullet_list.setObjectName("bullet_list")
+        edit_menu.addAction(self._act_bullet_list)
+
+        self._act_numbered_list = QAction("Liste &numérotée", self)
+        self._act_numbered_list.setShortcut(QKeySequence("Ctrl+Shift+7"))
+        self._act_numbered_list.setIcon(_icon("format-list-ordered"))
+        self._act_numbered_list.setObjectName("numbered_list")
+        edit_menu.addAction(self._act_numbered_list)
+
+        self._act_task_list = QAction("Liste de &tâches", self)
+        self._act_task_list.setShortcut(QKeySequence("Ctrl+Shift+T"))
+        self._act_task_list.setIcon(_icon("checkbox"))
+        self._act_task_list.setObjectName("task_list")
+        edit_menu.addAction(self._act_task_list)
+
+        self._act_quote = QAction("Ci&tation", self)
+        self._act_quote.setShortcut(QKeySequence("Ctrl+Shift+9"))
+        self._act_quote.setIcon(_icon("format-text-blockquote"))
+        self._act_quote.setObjectName("quote")
+        edit_menu.addAction(self._act_quote)
+
+        code_menu = edit_menu.addMenu("&Bloc de code")
+        code_menu.setIcon(_icon("code-context"))
+        self._code_lang_actions = []
+        for label, lang in CODE_LANGUAGES:
+            act = QAction(label, self)
+            act.setData(lang)
+            act.setObjectName(f"codeblock_{lang or 'texte'}")
+            code_menu.addAction(act)
+            self._code_lang_actions.append(act)
+
         # --- Affichage ---
         view_menu = bar.addMenu("&Affichage")
 
@@ -880,15 +1336,6 @@ class MarkdownApp(QMainWindow):
 
         view_menu.addSeparator()
 
-        self._act_dark = QAction("Mode &sombre", self)
-        self._act_dark.setShortcut(QKeySequence("F8"))
-        self._act_dark.setCheckable(True)
-        self._act_dark.setIcon(_icon("weather-clear-night"))
-        self._act_dark.setObjectName("dark")
-        view_menu.addAction(self._act_dark)
-
-        view_menu.addSeparator()
-
         self._act_zoom_in = QAction("Zoom &avant", self)
         self._act_zoom_in.setShortcut(QKeySequence("Ctrl++"))
         self._act_zoom_in.setIcon(_icon("zoom-in"))
@@ -910,7 +1357,7 @@ class MarkdownApp(QMainWindow):
         view_menu.addSeparator()
 
         self._act_toc = QAction("Panneau &latéral", self)
-        self._act_toc.setShortcut(QKeySequence("F9"))
+        self._act_toc.setShortcut(QKeySequence("F8"))
         self._act_toc.setCheckable(True)
         self._act_toc.setIcon(_icon("view-list-tree", QStyle.StandardPixmap.SP_FileDialogListView))
         self._act_toc.setObjectName("toc")
@@ -926,17 +1373,11 @@ class MarkdownApp(QMainWindow):
         # --- Outils ---
         tools_menu = bar.addMenu("&Outils")
 
-        self._act_gen_metadata = QAction("&Générer les métadonnées…", self)
+        self._act_gen_metadata = QAction("&Modifier les métadonnées…", self)
         self._act_gen_metadata.setShortcut(QKeySequence("Ctrl+Shift+M"))
         self._act_gen_metadata.setIcon(_icon("document-properties"))
         self._act_gen_metadata.setObjectName("gen_metadata")
         tools_menu.addAction(self._act_gen_metadata)
-
-        self._act_metadata = QAction("&Voir les métadonnées…", self)
-        self._act_metadata.setShortcut(QKeySequence("Ctrl+M"))
-        self._act_metadata.setIcon(_icon("dialog-information", QStyle.StandardPixmap.SP_MessageBoxInformation))
-        self._act_metadata.setObjectName("metadata")
-        tools_menu.addAction(self._act_metadata)
 
         tools_menu.addSeparator()
 
@@ -951,10 +1392,12 @@ class MarkdownApp(QMainWindow):
             "Minimaliste": _theme_icon("#6b7280"),
             "Sérif":       _theme_icon("#92400e", serif=True),
             "Compact":     _theme_icon("#0e7490", dense=True),
+            "Sombre":      _theme_icon("#89b4fa", dark=True),
         }
         _theme_objnames = {
             "Classique": "theme_classique", "Minimaliste": "theme_minimaliste",
             "Sérif": "theme_serif",         "Compact": "theme_compact",
+            "Sombre": "dark",
         }
         for name in THEMES:
             act = QAction(name, self)
@@ -967,6 +1410,12 @@ class MarkdownApp(QMainWindow):
             theme_group.addAction(act)
             themes_menu.addAction(act)
             self._theme_actions[name] = act
+
+        self._act_cycle_theme = QAction("Thème &suivant", self)
+        self._act_cycle_theme.setShortcut(QKeySequence("F9"))
+        self._act_cycle_theme.setObjectName("cycle_theme")
+        themes_menu.addSeparator()
+        themes_menu.addAction(self._act_cycle_theme)
 
         # Largeurs de contenu
         widths_menu = tools_menu.addMenu("&Largeur")
@@ -996,6 +1445,12 @@ class MarkdownApp(QMainWindow):
             widths_menu.addAction(act)
             self._width_actions[name] = act
 
+        self._act_cycle_width = QAction("Largeur &suivante", self)
+        self._act_cycle_width.setShortcut(QKeySequence("F10"))
+        self._act_cycle_width.setObjectName("cycle_width")
+        widths_menu.addSeparator()
+        widths_menu.addAction(self._act_cycle_width)
+
     # Ordre par défaut de la toolbar (noms d'objectName, "---" = séparateur)
     _DEFAULT_TOOLBAR = [
         "new", "open", "save", "---",
@@ -1020,18 +1475,29 @@ class MarkdownApp(QMainWindow):
             "view":         self._act_view,
             "edit":         self._act_edit,
             "split":        self._act_split,
-            "dark":         self._act_dark,
             "zoom_in":      self._act_zoom_in,
             "zoom_out":     self._act_zoom_out,
             "zoom_reset":   self._act_zoom_reset,
             "toc":          self._act_toc,
             "gen_metadata": self._act_gen_metadata,
-            "metadata":     self._act_metadata,
+            "cycle_theme":  self._act_cycle_theme,
+            "cycle_width":  self._act_cycle_width,
+            "bold":         self._act_bold,
+            "italic":       self._act_italic,
+            "strike":       self._act_strike,
+            "code":         self._act_code,
+            "mark":         self._act_mark,
+            "link":         self._act_link,
+            "bullet_list":  self._act_bullet_list,
+            "numbered_list": self._act_numbered_list,
+            "task_list":    self._act_task_list,
+            "quote":        self._act_quote,
         }
         # Thèmes
         _theme_objnames = {
             "Classique": "theme_classique", "Minimaliste": "theme_minimaliste",
             "Sérif": "theme_serif",         "Compact": "theme_compact",
+            "Sombre": "dark",
         }
         for name, act in self._theme_actions.items():
             d[_theme_objnames[name]] = act
@@ -1043,6 +1509,41 @@ class MarkdownApp(QMainWindow):
         for name, act in self._width_actions.items():
             d[_width_objnames[name]] = act
         return d
+
+    def _setup_format_toolbar(self):
+        """Barre d'icônes de formatage Markdown, affichée au-dessus de l'éditeur."""
+        tb = QToolBar("Formatage")
+        tb.setMovable(False)
+        tb.setIconSize(QSize(16, 16))
+        for act in (
+            self._act_bold, self._act_italic, self._act_strike, self._act_code,
+            self._act_mark,
+        ):
+            tb.addAction(act)
+        tb.addSeparator()
+        tb.addAction(self._act_link)
+        tb.addSeparator()
+        for act in (
+            self._act_bullet_list, self._act_numbered_list,
+            self._act_task_list, self._act_quote,
+        ):
+            tb.addAction(act)
+        tb.addSeparator()
+
+        code_btn = QToolButton()
+        code_btn.setText("Code")
+        code_btn.setToolTip("Insérer un bloc de code")
+        code_btn.setIcon(_icon("code-context"))
+        code_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        code_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        code_menu = QMenu(code_btn)
+        for act in self._code_lang_actions:
+            code_menu.addAction(act)
+        code_btn.setMenu(code_menu)
+        tb.addWidget(code_btn)
+
+        self._format_toolbar = tb
+        self._editor_layout.insertWidget(0, tb)
 
     def _setup_toolbar(self):
         self._toolbar = QToolBar("Barre d'outils")
@@ -1090,19 +1591,32 @@ class MarkdownApp(QMainWindow):
         self._act_view.triggered.connect(lambda: self._switch_mode("view"))
         self._act_edit.triggered.connect(lambda: self._switch_mode("edit"))
         self._act_split.triggered.connect(lambda: self._switch_mode("split"))
-        self._act_dark.triggered.connect(self._toggle_dark_mode)
 
         self._act_zoom_in.triggered.connect(self._on_zoom_in)
         self._act_zoom_out.triggered.connect(self._on_zoom_out)
         self._act_zoom_reset.triggered.connect(self._on_zoom_reset)
         self._act_toc.triggered.connect(self._toggle_toc)
+        self._act_cycle_theme.triggered.connect(self._cycle_theme)
+        self._act_cycle_width.triggered.connect(self._cycle_width)
 
         self._act_gen_metadata.triggered.connect(self._on_generate_metadata)
-        self._act_metadata.triggered.connect(self._on_show_metadata)
 
         self._act_search.triggered.connect(self._toggle_search)
         self._act_replace.triggered.connect(self._toggle_replace)
         self._act_customize_tb.triggered.connect(self._on_customize_toolbar)
+
+        self._act_bold.triggered.connect(self._editor.format_bold)
+        self._act_italic.triggered.connect(self._editor.format_italic)
+        self._act_strike.triggered.connect(self._editor.format_strikethrough)
+        self._act_code.triggered.connect(self._editor.format_code)
+        self._act_mark.triggered.connect(self._editor.format_mark)
+        for act in self._code_lang_actions:
+            act.triggered.connect(self._on_insert_code_block)
+        self._act_link.triggered.connect(self._editor.format_link)
+        self._act_bullet_list.triggered.connect(self._editor.format_bullet_list)
+        self._act_numbered_list.triggered.connect(self._editor.format_numbered_list)
+        self._act_task_list.triggered.connect(self._editor.format_task_list)
+        self._act_quote.triggered.connect(self._editor.format_quote)
 
         self._editor.textChanged.connect(self._on_text_changed)
         self._editor.verticalScrollBar().valueChanged.connect(self._on_editor_scrolled)
@@ -1384,13 +1898,9 @@ class MarkdownApp(QMainWindow):
             )
             return
 
-        key_labels = {
-            "title": "Titre", "author": "Auteur", "created": "Créé",
-            "updated": "Mis à jour", "tags": "Tags", "description": "Description",
-        }
         rows = []
-        for key, raw_values in sorted(meta.items()):
-            label = key_labels.get(key.lower(), key.capitalize())
+        for key, raw_values in _sorted_meta_items(meta):
+            label = METADATA_LABELS.get(key.lower(), key.capitalize())
             tokens = self._split_meta_values(raw_values)
             if key.lower() == "tags" and len(tokens) > 1:
                 val_html = " ".join(
@@ -1443,8 +1953,6 @@ class MarkdownApp(QMainWindow):
 
     def _get_css(self):
         width_val = CONTENT_WIDTHS[self._current_width]
-        if self._dark_mode:
-            return DARK_CSS.replace("%%MAX_WIDTH%%", width_val)
         return THEMES[self._current_theme]().replace("%%MAX_WIDTH%%", width_val)
 
     @staticmethod
@@ -1512,6 +2020,39 @@ class MarkdownApp(QMainWindow):
 
         self._web_view.setHtml(html, base_url)
 
+    def _render_preserving_scroll(self):
+        """Comme _render(), mais restaure la position de défilement de la vue
+        rendue (utile lors d'un changement de thème ou de largeur)."""
+        query = (
+            "(function(){"
+            "  var h = document.documentElement.scrollHeight - window.innerHeight;"
+            "  return h > 0 ? window.scrollY / h : 0;"
+            "})();"
+        )
+
+        def _restore(_ok):
+            try:
+                self._web_view.page().loadFinished.disconnect(_restore)
+            except RuntimeError:
+                pass
+            js = (
+                "(function(){"
+                f"  var h = document.documentElement.scrollHeight - window.innerHeight;"
+                f"  if (h > 0) window.scrollTo(0, {ratio} * h);"
+                "})();"
+            )
+            self._web_view.page().runJavaScript(js)
+
+        def _got_ratio(value):
+            nonlocal ratio
+            ratio = value or 0.0
+            self._render()
+            if ratio:
+                self._web_view.page().loadFinished.connect(_restore)
+
+        ratio = 0.0
+        self._web_view.page().runJavaScript(query, _got_ratio)
+
     def _scroll_web_to_cursor_once(self, _ok):
         try:
             self._web_view.page().loadFinished.disconnect(self._scroll_web_to_cursor_once)
@@ -1568,20 +2109,20 @@ class MarkdownApp(QMainWindow):
         if mode == "view":
             self._render()
             self._web_view.setVisible(True)
-            self._editor.setVisible(False)
+            self._editor_container.setVisible(False)
             self._act_view.setChecked(True)
             self._statusbar.showMessage("Mode : Affichage")
         elif mode == "edit":
             self._render_timer.stop()
             self._web_view.setVisible(False)
-            self._editor.setVisible(True)
+            self._editor_container.setVisible(True)
             self._act_edit.setChecked(True)
             self._statusbar.showMessage("Mode : Édition")
             self._editor.setFocus()
         else:  # split
             self._render()
             self._web_view.setVisible(True)
-            self._editor.setVisible(True)
+            self._editor_container.setVisible(True)
             self._act_split.setChecked(True)
             self._statusbar.showMessage("Mode : Partagé")
             self._editor.setFocus()
@@ -1589,18 +2130,17 @@ class MarkdownApp(QMainWindow):
             self._on_search_text_changed()
 
     # -----------------------------------------------------------------------
-    # Mode sombre
+    # Thèmes (dont le thème sombre)
     # -----------------------------------------------------------------------
 
-    def _toggle_dark_mode(self, _checked=False):
-        checked = self._act_dark.isChecked()
-        self._dark_mode = checked
-        self._highlighter.set_dark(checked)
+    def _apply_theme_effects(self, dark):
+        self._dark_mode = dark
+        self._highlighter.set_dark(dark)
         self._editor.set_current_line_color(
-            QColor("#14141f") if checked else QColor("#93c5fd")
+            QColor("#14141f") if dark else QColor("#93c5fd")
         )
         self._apply_toc_style()
-        if checked:
+        if dark:
             QApplication.instance().setPalette(self._make_dark_palette())
             p = self._editor.palette()
             p.setColor(QPalette.ColorRole.Base, QColor("#1e1e2e"))
@@ -1610,18 +2150,38 @@ class MarkdownApp(QMainWindow):
         else:
             QApplication.instance().setPalette(QApplication.style().standardPalette())
             self._editor.setPalette(QApplication.style().standardPalette())
+
+    def _on_insert_code_block(self):
+        self._editor.insert_code_block(self.sender().data())
+
+    def _select_theme(self, name):
+        self._current_theme = name
+        self._theme_actions[name].setChecked(True)
+        self._apply_theme_effects(name == "Sombre")
         if self._mode != "edit":
-            self._render()
+            self._render_preserving_scroll()
 
     def _on_set_theme(self):
-        self._current_theme = self.sender().data()
+        self._select_theme(self.sender().data())
+
+    def _cycle_theme(self):
+        names = list(THEMES)
+        idx = (names.index(self._current_theme) + 1) % len(names)
+        self._select_theme(names[idx])
+
+    def _select_width(self, name):
+        self._current_width = name
+        self._width_actions[name].setChecked(True)
         if self._mode != "edit":
-            self._render()
+            self._render_preserving_scroll()
 
     def _on_set_width(self):
-        self._current_width = self.sender().data()
-        if self._mode != "edit":
-            self._render()
+        self._select_width(self.sender().data())
+
+    def _cycle_width(self):
+        names = list(CONTENT_WIDTHS)
+        idx = (names.index(self._current_width) + 1) % len(names)
+        self._select_width(names[idx])
 
     @staticmethod
     def _make_dark_palette():
@@ -2033,9 +2593,12 @@ class MarkdownApp(QMainWindow):
         md_parser.convert(source)
         existing = md_parser.Meta
 
-        def _get(key, default=""):
-            vals = existing.get(key, [])
-            return ", ".join(v.strip() for v in vals) if vals else default
+        def _get(*keys, default=""):
+            for key in keys:
+                vals = existing.get(key, [])
+                if vals:
+                    return ", ".join(v.strip() for v in vals)
+            return default
 
         if self._current_file:
             base = os.path.splitext(os.path.basename(self._current_file))[0]
@@ -2044,17 +2607,17 @@ class MarkdownApp(QMainWindow):
             default_title = ""
 
         default_created = date.today().isoformat()
-        default_updated = date.today().isoformat()
+        default_timestamp = date.today().isoformat()
         if self._current_file and os.path.exists(self._current_file):
             st = os.stat(self._current_file)
-            default_updated = datetime.fromtimestamp(st.st_mtime).date().isoformat()
+            default_timestamp = datetime.fromtimestamp(st.st_mtime).date().isoformat()
             try:
                 default_created = datetime.fromtimestamp(st.st_birthtime).date().isoformat()
             except AttributeError:
-                default_created = default_updated
+                default_created = default_timestamp
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Générer les métadonnées")
+        dlg.setWindowTitle("Modifier les métadonnées")
         dlg.setMinimumWidth(440)
         vl = QVBoxLayout(dlg)
         form = QFormLayout()
@@ -2062,21 +2625,36 @@ class MarkdownApp(QMainWindow):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         vl.addLayout(form)
 
-        f_title       = QLineEdit(_get("title", default_title))
-        f_author      = QLineEdit(_get("author", self._default_author()))
-        f_created     = QLineEdit(_get("created", default_created))
-        f_updated     = QLineEdit(_get("updated", default_updated))
-        f_tags        = QLineEdit(_get("tags"))
-        f_tags.setPlaceholderText("tag1, tag2, tag3")
+        f_type = QComboBox()
+        f_type.setStyleSheet(
+            "QComboBox QAbstractItemView { border: 1px solid #d0d0d0; }"
+        )
+        f_type.addItem("sélectionner…", "")
+        italic_font = QFont()
+        italic_font.setItalic(True)
+        f_type.setItemData(0, italic_font, Qt.ItemDataRole.FontRole)
+        for t in METADATA_TYPES:
+            f_type.addItem(t.capitalize(), t)
+        existing_type = _get("type").strip().lower()
+        idx = f_type.findData(existing_type)
+        f_type.setCurrentIndex(idx if idx >= 0 else 0)
+
+        f_title       = QLineEdit(_get("title", default=default_title))
         f_description = QLineEdit(_get("description"))
         f_description.setPlaceholderText("(optionnel)")
+        f_author      = QLineEdit(_get("author", default=self._default_author()))
+        f_tags        = QLineEdit(_get("tags"))
+        f_tags.setPlaceholderText("tag1, tag2, tag3")
+        f_created     = QLineEdit(_get("created", default=default_created))
+        f_timestamp   = QLineEdit(_get("timestamp", "updated", default=default_timestamp))
 
+        form.addRow("Type :",          f_type)
         form.addRow("Titre :",         f_title)
-        form.addRow("Auteur :",        f_author)
-        form.addRow("Créé le :",       f_created)
-        form.addRow("Mis à jour le :", f_updated)
-        form.addRow("Tags :",          f_tags)
         form.addRow("Description :",   f_description)
+        form.addRow("Auteur :",        f_author)
+        form.addRow("Tags :",          f_tags)
+        form.addRow("Créé le :",       f_created)
+        form.addRow("Mis à jour le :", f_timestamp)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -2093,19 +2671,20 @@ class MarkdownApp(QMainWindow):
             QSettings("maillard.li", "MarkdownViewer").setValue("lastAuthor", author_val)
 
         fields = [
+            ("Type",        f_type.currentData() or ""),
             ("Title",       f_title.text().strip()),
-            ("Author",      author_val),
-            ("Created",     f_created.text().strip()),
-            ("Updated",     f_updated.text().strip()),
-            ("Tags",        f_tags.text().strip()),
             ("Description", f_description.text().strip()),
+            ("Author",      author_val),
+            ("Tags",        f_tags.text().strip()),
+            ("Created",     f_created.text().strip()),
+            ("Timestamp",   f_timestamp.text().strip()),
         ]
         meta_lines = [f"{k}: {v}" for k, v in fields if v]
         if not meta_lines:
             return
         body = self._strip_meta_block(source)
         self._editor.setPlainText("\n".join(meta_lines) + "\n\n" + body)
-        self._statusbar.showMessage("Métadonnées insérées.", 3000)
+        self._statusbar.showMessage("Métadonnées mises à jour.", 3000)
 
     @staticmethod
     def _split_meta_values(values):
@@ -2113,65 +2692,6 @@ class MarkdownApp(QMainWindow):
         for v in values:
             tokens.extend(t.strip() for t in v.split(",") if t.strip())
         return tokens
-
-    @staticmethod
-    def _make_badge_widget(tokens):
-        container = QWidget()
-        container.setAutoFillBackground(False)
-        hl = QHBoxLayout(container)
-        hl.setContentsMargins(4, 4, 4, 4)
-        hl.setSpacing(6)
-        for token in tokens:
-            badge = QLabel(token)
-            badge.setStyleSheet(
-                "QLabel { background: #e0e7ff; color: #3730a3; border-radius: 10px;"
-                " padding: 2px 10px; font-size: 11px; font-weight: 600; }"
-            )
-            hl.addWidget(badge)
-        hl.addStretch()
-        return container
-
-    def _on_show_metadata(self):
-        source = self._editor.toPlainText()
-        md = markdown.Markdown(extensions=["meta"])
-        md.convert(source)
-        meta = md.Meta
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Métadonnées du document")
-        dlg.setMinimumWidth(520)
-        layout = QVBoxLayout(dlg)
-
-        if meta:
-            table = QTableWidget(len(meta), 2, dlg)
-            table.setHorizontalHeaderLabels(["Clé", "Valeur"])
-            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            table.verticalHeader().setVisible(False)
-            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-            table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-            table.setShowGrid(False)
-            table.setAlternatingRowColors(True)
-
-            for row, (key, raw_values) in enumerate(sorted(meta.items())):
-                table.setItem(row, 0, QTableWidgetItem(key))
-                tokens = self._split_meta_values(raw_values)
-                if len(tokens) > 1:
-                    table.setCellWidget(row, 1, self._make_badge_widget(tokens))
-                    table.setRowHeight(row, 34)
-                else:
-                    table.setItem(row, 1, QTableWidgetItem(tokens[0] if tokens else ""))
-
-            layout.addWidget(table)
-        else:
-            lbl = QLabel("Aucune métadonnée trouvée dans ce document.")
-            lbl.setStyleSheet("color: #666; padding: 12px;")
-            layout.addWidget(lbl)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(dlg.accept)
-        layout.addWidget(buttons)
-        dlg.exec()
 
     # -----------------------------------------------------------------------
     # Personnalisation de la barre d'outils
@@ -2371,9 +2891,15 @@ class MarkdownApp(QMainWindow):
             self._zoom_factor = 1.0
         self._web_view.setZoomFactor(self._zoom_factor)
         theme = settings.value("theme", DEFAULT_THEME)
+        # Migration : l'ancien réglage "darkMode" (mode sombre indépendant
+        # du thème) prévaut si présent, et sélectionne désormais le thème
+        # "Sombre".
+        if settings.value("darkMode", False, type=bool):
+            theme = "Sombre"
         if theme in THEMES:
             self._current_theme = theme
             self._theme_actions[theme].setChecked(True)
+            self._apply_theme_effects(theme == "Sombre")
         width = settings.value("contentWidth", DEFAULT_WIDTH)
         if width in CONTENT_WIDTHS:
             self._current_width = width
@@ -2383,10 +2909,6 @@ class MarkdownApp(QMainWindow):
             self._toc_dock.show()
             self._act_toc.setChecked(True)
             QTimer.singleShot(0, self._update_toc)
-        dark = settings.value("darkMode", False, type=bool)
-        if dark:
-            self._act_dark.setChecked(True)
-            self._toggle_dark_mode()
 
     def _save_geometry(self):
         settings = QSettings("maillard.li", "MarkdownViewer")
@@ -2396,7 +2918,7 @@ class MarkdownApp(QMainWindow):
         settings.setValue("theme", self._current_theme)
         settings.setValue("contentWidth", self._current_width)
         settings.setValue("panelVisible", self._toc_dock.isVisible())
-        settings.setValue("darkMode", self._dark_mode)
+        settings.remove("darkMode")
 
     def closeEvent(self, event):
         if self._maybe_save():
