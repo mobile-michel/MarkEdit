@@ -17,7 +17,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
     QTextCharFormat, QColor, QTextDocument, QSyntaxHighlighter, QPalette, QTextFormat,
-    QPixmap, QFont, QTextCursor,
+    QPixmap, QFont, QTextCursor, QDesktopServices,
 )
 from PyQt6.QtPdf import QPdfDocument
 from PyQt6.QtWidgets import (
@@ -958,17 +958,25 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
 
 # ---------------------------------------------------------------------------
-# Page web avec ouverture des liens externes dans le navigateur système
+# Page web avec ouverture des liens par les applications système
 # ---------------------------------------------------------------------------
 
 class ExternalLinkPage(QWebEnginePage):
+    """Tout lien cliqué est confié à l'application système associée (xdg-open),
+    à l'exception des liens internes « #ancre » qui restent dans l'aperçu."""
+
+    def _is_internal_anchor(self, url):
+        if not url.hasFragment():
+            return False
+        no_frag = QUrl.UrlFormattingOption.RemoveFragment
+        return url.adjusted(no_frag) == self.url().adjusted(no_frag)
+
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
         if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
-            scheme = url.scheme()
-            if scheme in ("http", "https", "mailto"):
-                import webbrowser
-                webbrowser.open(url.toString())
-                return False
+            if self._is_internal_anchor(url):
+                return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+            QDesktopServices.openUrl(url)
+            return False
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
 
