@@ -93,7 +93,7 @@ _PYGMENTS_CSS_DARK  = HtmlFormatter(style="monokai").get_style_defs(".highlight"
 
 MAX_RECENT_FILES = 10
 
-APP_VERSION = "3.2"
+APP_VERSION = "3.3"
 APP_AUTHOR = "Michel Maillard"
 
 # ---------------------------------------------------------------------------
