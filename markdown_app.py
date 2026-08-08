@@ -958,12 +958,20 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
 
 # ---------------------------------------------------------------------------
-# Page web avec ouverture des liens par les applications système
+# Page web avec routage des liens de l'aperçu
 # ---------------------------------------------------------------------------
 
+MARKDOWN_SUFFIXES = (".md", ".markdown", ".mkd")
+
+
 class ExternalLinkPage(QWebEnginePage):
-    """Tout lien cliqué est confié à l'application système associée (xdg-open),
-    à l'exception des liens internes « #ancre » qui restent dans l'aperçu."""
+    """Route les liens cliqués dans l'aperçu selon leur cible : les ancres
+    « #… » défilent dans l'aperçu, les fichiers Markdown locaux s'ouvrent dans
+    la fenêtre, tout le reste part vers l'application système (xdg-open)."""
+
+    def __init__(self, parent=None, on_markdown_file=None):
+        super().__init__(parent)
+        self._on_markdown_file = on_markdown_file
 
     def _is_internal_anchor(self, url):
         if not url.hasFragment():
@@ -971,10 +979,25 @@ class ExternalLinkPage(QWebEnginePage):
         no_frag = QUrl.UrlFormattingOption.RemoveFragment
         return url.adjusted(no_frag) == self.url().adjusted(no_frag)
 
+    @staticmethod
+    def _markdown_path(url):
+        """Chemin du fichier Markdown local visé par url, sinon None."""
+        if not url.isLocalFile():
+            return None
+        path = url.toLocalFile()
+        return path if path.lower().endswith(MARKDOWN_SUFFIXES) else None
+
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
         if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
             if self._is_internal_anchor(url):
                 return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+            path = self._markdown_path(url)
+            if path and self._on_markdown_file:
+                # Différé : ouvrir le fichier recharge cette même page, ce qui
+                # ne peut pas se faire pendant le traitement de la navigation.
+                anchor = url.fragment() or None
+                QTimer.singleShot(0, lambda: self._on_markdown_file(path, anchor))
+                return False
             QDesktopServices.openUrl(url)
             return False
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
@@ -1053,6 +1076,8 @@ class MarkdownApp(QMainWindow):
         self._current_width = DEFAULT_WIDTH
         self._scroll_sync_lock = False
         self._typing_active = False
+        self._history = []          # fichiers précédemment ouverts, pour « Précédent »
+        self._pending_anchor = None  # ancre à rejoindre après l'ouverture d'un lien
 
         self._setup_ui()
         self._setup_menus()
@@ -1077,7 +1102,9 @@ class MarkdownApp(QMainWindow):
 
     def _setup_ui(self):
         self._web_view = QWebEngineView()
-        self._web_view.setPage(ExternalLinkPage(self._web_view))
+        self._web_view.setPage(
+            ExternalLinkPage(self._web_view, self._open_linked_markdown)
+        )
         self._task_bridge = TaskBridge(self._on_task_checkbox_toggled, self)
         self._web_channel = QWebChannel(self._web_view.page())
         self._web_channel.registerObject("bridge", self._task_bridge)
@@ -1213,6 +1240,13 @@ class MarkdownApp(QMainWindow):
         self._recent_menu = QMenu("Fichiers &récents", self)
         self._recent_menu.setIcon(_icon("document-open-recent"))
         file_menu.addMenu(self._recent_menu)
+
+        self._act_back = QAction("&Précédent", self)
+        self._act_back.setShortcut(QKeySequence.StandardKey.Back)
+        self._act_back.setIcon(_icon("go-previous", QStyle.StandardPixmap.SP_ArrowBack))
+        self._act_back.setObjectName("back")
+        self._act_back.setEnabled(False)
+        file_menu.addAction(self._act_back)
 
         file_menu.addSeparator()
 
@@ -1527,6 +1561,7 @@ class MarkdownApp(QMainWindow):
         d = {
             "new":          self._act_new,
             "open":         self._act_open,
+            "back":         self._act_back,
             "save":         self._act_save,
             "save_as":      self._act_save_as,
             "export_html":  self._act_export_html,
@@ -1657,6 +1692,7 @@ class MarkdownApp(QMainWindow):
     def _connect_signals(self):
         self._act_new.triggered.connect(self._new_file)
         self._act_open.triggered.connect(self._on_open)
+        self._act_back.triggered.connect(self._go_back)
         self._act_save.triggered.connect(self._on_save)
         self._act_save_as.triggered.connect(self._on_save_as)
         self._act_export_html.triggered.connect(self._on_export_html)
@@ -2459,6 +2495,9 @@ class MarkdownApp(QMainWindow):
             return
         if self._current_file and self._current_file in self._watcher.files():
             self._watcher.removePath(self._current_file)
+        if self._current_file:
+            self._history.append(self._current_file)
+            self._update_back_action()
         self._current_file = None
         self._editor.clear()
         self._set_modified(False)
@@ -2475,24 +2514,87 @@ class MarkdownApp(QMainWindow):
         if path:
             self._open_file(path)
 
-    def _open_file(self, path):
+    def _open_file(self, path, remember_current=True):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 content = f.read()
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Impossible d'ouvrir :\n{e}")
             return
+        if remember_current and self._current_file and self._current_file != path:
+            self._history.append(self._current_file)
+            self._update_back_action()
         if self._current_file and self._current_file in self._watcher.files():
             self._watcher.removePath(self._current_file)
         self._current_file = path
         self._editor.setPlainText(content)
         self._set_modified(False)
+        if self._pending_anchor:
+            self._scroll_to_anchor_once(self._pending_anchor)
+            self._pending_anchor = None
         self._switch_mode("view")
         self._update_title()
         self._add_to_recent(path)
         self._watcher.addPath(path)
         self._update_toc()
         self._update_stats()
+
+    # -----------------------------------------------------------------------
+    # Navigation entre fichiers liés
+    # -----------------------------------------------------------------------
+
+    def _open_linked_markdown(self, path, anchor=None):
+        """Ouvre dans cette fenêtre le fichier Markdown d'un lien de l'aperçu."""
+        if not os.path.isfile(path):
+            QMessageBox.warning(
+                self, "Fichier introuvable",
+                f"Le fichier lié n'existe pas :\n{path}",
+            )
+            return
+        if not self._maybe_save():
+            return
+        self._pending_anchor = anchor
+        self._open_file(path)
+
+    def _go_back(self):
+        """Revient au fichier précédemment ouvert."""
+        while self._history:
+            path = self._history.pop()
+            self._update_back_action()
+            if not os.path.isfile(path):
+                continue          # fichier disparu entre-temps : on remonte plus loin
+            if not self._maybe_save():
+                self._history.append(path)
+                self._update_back_action()
+                return
+            self._open_file(path, remember_current=False)
+            return
+
+    def _update_back_action(self):
+        self._act_back.setEnabled(bool(self._history))
+        if self._history:
+            name = os.path.basename(self._history[-1])
+            self._act_back.setToolTip(
+                f"Précédent : {name} ({self._act_back.shortcut().toString()})"
+            )
+        else:
+            self._act_back.setToolTip("Précédent")
+
+    def _scroll_to_anchor_once(self, anchor):
+        """Fait défiler l'aperçu jusqu'à l'ancre du lien suivi, une fois le
+        prochain rendu terminé."""
+        page = self._web_view.page()
+        target = anchor.replace("\\", "\\\\").replace("'", "\\'")
+
+        def _scroll(ok):
+            page.loadFinished.disconnect(_scroll)
+            if ok:
+                page.runJavaScript(
+                    f"var el = document.getElementById('{target}');"
+                    f"if (el) el.scrollIntoView({{block:'start'}});"
+                )
+
+        page.loadFinished.connect(_scroll)
 
     def _on_save(self):
         if self._current_file:

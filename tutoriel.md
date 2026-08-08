@@ -35,6 +35,14 @@ En mode **Partagé**, le rendu se met à jour automatiquement 300 ms après chaq
 
 Le menu **Fichier → Fichiers récents** conserve les 10 derniers fichiers ouverts. Un clic ouvre directement le fichier. L'option *Effacer l'historique* vide la liste.
 
+### Navigation entre fichiers liés
+
+Dans l'aperçu, un lien pointant vers un fichier Markdown local (`.md`, `.markdown`, `.mkd`) l'ouvre directement dans la fenêtre. Si le lien comporte une ancre — `guide.md#installation` —, l'aperçu se positionne sur la section correspondante.
+
+**Fichier → Précédent** `Alt+Left` revient au fichier précédemment ouvert ; les retours successifs remontent tout l'historique de la session.
+
+Les autres liens ne sont pas concernés : les ancres `#section` défilent dans l'aperçu, et tout le reste — adresses web, `mailto:`, PDF, images — s'ouvre dans l'application système associée.
+
 ### Glisser-déposer
 
 Il est possible de faire glisser un fichier Markdown depuis le gestionnaire de fichiers directement dans la fenêtre pour l'ouvrir.
@@ -288,6 +296,7 @@ La coloration syntaxique des blocs de code utilise **Pygments** et supporte des 
 |-----------|--------|
 | `Ctrl+N` | Nouveau fichier |
 | `Ctrl+O` | Ouvrir |
+| `Alt+Left` | Fichier précédent |
 | `Ctrl+S` | Enregistrer |
 | `Ctrl+Shift+S` | Enregistrer sous |
 | `Ctrl+E` | Exporter HTML |
