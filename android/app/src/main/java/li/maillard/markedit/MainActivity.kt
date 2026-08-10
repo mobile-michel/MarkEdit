@@ -142,7 +142,7 @@ fun EditorScreen(initialUri: Uri?) {
     var folderUri by rememberSaveable { mutableStateOf<String?>(null) }
     val history = rememberSaveable(saver = historySaver) { mutableStateListOf<OpenDoc>() }
     val folder = remember(folderUri) {
-        folderUri?.let { DocumentFile.fromTreeUri(context, Uri.parse(it)) }
+        folderUri?.let { treeDocument(context, Uri.parse(it)) }
     }
 
     var toc by remember { mutableStateOf(MarkdownRenderer.tableOfContents(PLACEHOLDER)) }
@@ -296,7 +296,7 @@ fun EditorScreen(initialUri: Uri?) {
             context.contentResolver.persistedUriPermissions
                 .firstOrNull {
                     it.isReadPermission &&
-                        DocumentFile.fromTreeUri(context, it.uri)?.isDirectory == true
+                        treeDocument(context, it.uri)?.isDirectory == true
                 }
                 ?.let { folderUri = it.uri.toString() }
         }

@@ -3,6 +3,7 @@ package li.maillard.markedit
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.documentfile.provider.DocumentFile
 
@@ -35,7 +36,7 @@ fun OpenDoc.toFields(): List<String> =
 fun List<String>.toOpenDoc(context: Context): OpenDoc? {
     if (size < FIELDS_PER_DOC || this[0].isEmpty()) return null
     val parent = this[2].takeIf { it.isNotEmpty() }
-        ?.let { DocumentFile.fromTreeUri(context, Uri.parse(it)) }
+        ?.let { treeDocument(context, Uri.parse(it)) }
     return OpenDoc(Uri.parse(this[0]), this[1], parent)
 }
 
@@ -53,6 +54,17 @@ class OpenWritableDocument : ActivityResultContracts.OpenDocument() {
             )
         }
 }
+
+/**
+ * Dossier désigné par [uri], ou null si ce n'en est pas un.
+ *
+ * `DocumentFile.fromTreeUri` lève une exception — au lieu de renvoyer null —
+ * sur une URI de document simple, ce qu'on trouve parmi les autorisations
+ * persistées dès qu'un fichier a été ouvert seul.
+ */
+fun treeDocument(context: Context, uri: Uri): DocumentFile? = runCatching {
+    if (DocumentsContract.isTreeUri(uri)) DocumentFile.fromTreeUri(context, uri) else null
+}.getOrNull()
 
 object Documents {
 
