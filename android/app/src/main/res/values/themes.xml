@@ -1,0 +1,5 @@
+<resources>
+    <!-- Thème hôte de l'activité ; Compose gère les couleurs réelles via
+         MaterialTheme. NoActionBar car la barre est fournie par Compose. -->
+    <style name="Theme.MarkEdit" parent="Theme.Material3.DayNight.NoActionBar" />
+</resources>
