@@ -1,8 +1,10 @@
 package li.maillard.markedit
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.MotionEvent
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -106,6 +108,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("ClickableViewAccessibility")   // la WebView gère elle-même ses clics
 @Composable
 fun EditorScreen(initialUri: Uri?) {
     val context = LocalContext.current
@@ -532,6 +535,16 @@ fun EditorScreen(initialUri: Uri?) {
                         factory = { ctx ->
                             WebView(ctx).apply {
                                 settings.javaScriptEnabled = true
+                                overScrollMode = WebView.OVER_SCROLL_NEVER
+                                // Sans ça, Compose s'approprie le geste vertical
+                                // dès les premiers pixels et le défilement de la
+                                // page se fige au bout de quelques lignes.
+                                setOnTouchListener { view, event ->
+                                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                                        view.parent?.requestDisallowInterceptTouchEvent(true)
+                                    }
+                                    false
+                                }
                                 webViewClient = object : WebViewClient() {
                                     override fun shouldOverrideUrlLoading(
                                         view: WebView,
