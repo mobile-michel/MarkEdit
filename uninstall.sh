@@ -45,11 +45,28 @@ done
 rm -f "$HOME/.local/share/icons/hicolor/scalable/apps/markedit.svg"
 echo "✅ Icône supprimée"
 
+# Retirer les associations Markdown posées par l'installation
+KDE_MIMEAPPS="$HOME/.config/kde-mimeapps.list"
+if [ -f "$KDE_MIMEAPPS" ] && grep -q '=markedit.desktop$' "$KDE_MIMEAPPS"; then
+    echo "🗑️  Suppression des associations Markdown (KDE)..."
+    sed -i '/=markedit.desktop$/d' "$KDE_MIMEAPPS"
+    echo "✅ Associations supprimées"
+fi
+
 # Mettre à jour la base de données des applications
 if command -v update-desktop-database &> /dev/null; then
     echo "🔄 Mise à jour de la base de données des applications..."
     update-desktop-database "$HOME/.local/share/applications"
 fi
+
+# Reconstruire le cache de services KDE
+for kbuild in kbuildsycoca6 kbuildsycoca5; do
+    if command -v "$kbuild" &> /dev/null; then
+        echo "🔄 Reconstruction du cache KDE ($kbuild)..."
+        "$kbuild" --noincremental &> /dev/null || true
+        break
+    fi
+done
 
 echo ""
 echo "================================"

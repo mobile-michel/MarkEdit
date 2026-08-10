@@ -84,7 +84,7 @@ Exec=/home/michel/.local/opt/MarkEdit/.venv/bin/python3 /home/michel/.local/opt/
 Icon=markedit
 Categories=Office;Utility;TextEditor;
 Terminal=false
-MimeType=text/markdown;text/plain;
+MimeType=text/markdown;text/x-markdown;text/plain;
 EOF
 
 chmod 644 "$DESKTOP_FILE"
@@ -97,11 +97,54 @@ if [ -f "$OLD_DESKTOP_FILE" ]; then
     echo "✅ Ancien lanceur supprimé"
 fi
 
+# Types MIME que MarkEdit doit ouvrir par défaut
+MARKDOWN_MIMES="text/markdown text/x-markdown"
+
+echo "🔗 Association de MarkEdit aux types Markdown..."
+if command -v xdg-mime &> /dev/null; then
+    for mime in $MARKDOWN_MIMES; do
+        xdg-mime default markedit.desktop "$mime"
+    done
+fi
+
+# Sous KDE, /usr/share/applications/kde-mimeapps.list (paquet plasma-desktop)
+# impose text/markdown -> Kate. Seul un kde-mimeapps.list utilisateur, lu en
+# premier, peut le neutraliser. La spec n'y autorise que [Default Applications].
+KDE_MIMEAPPS="$HOME/.config/kde-mimeapps.list"
+if [ ! -f "$KDE_MIMEAPPS" ]; then
+    cat > "$KDE_MIMEAPPS" << 'EOF'
+# Associations MIME spécifiques à KDE Plasma, lues avant ~/.config/mimeapps.list
+# et avant /usr/share/applications/kde-mimeapps.list.
+
+[Default Applications]
+EOF
+fi
+if ! grep -q '^\[Default Applications\]' "$KDE_MIMEAPPS"; then
+    printf '\n[Default Applications]\n' >> "$KDE_MIMEAPPS"
+fi
+for mime in $MARKDOWN_MIMES; do
+    if grep -q "^${mime}=" "$KDE_MIMEAPPS"; then
+        sed -i "s|^${mime}=.*|${mime}=markedit.desktop|" "$KDE_MIMEAPPS"
+    else
+        sed -i "/^\[Default Applications\]/a ${mime}=markedit.desktop" "$KDE_MIMEAPPS"
+    fi
+done
+echo "✅ MarkEdit défini comme application par défaut pour le Markdown"
+
 # Mettre à jour la base de données des applications
 if command -v update-desktop-database &> /dev/null; then
     echo "🔄 Mise à jour de la base de données des applications..."
     update-desktop-database "$HOME/.local/share/applications"
 fi
+
+# Reconstruire le cache de services KDE (sinon Plasma garde l'ancienne association)
+for kbuild in kbuildsycoca6 kbuildsycoca5; do
+    if command -v "$kbuild" &> /dev/null; then
+        echo "🔄 Reconstruction du cache KDE ($kbuild)..."
+        "$kbuild" --noincremental &> /dev/null || true
+        break
+    fi
+done
 
 echo ""
 echo "================================"
