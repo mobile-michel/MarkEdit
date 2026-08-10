@@ -2,7 +2,7 @@
 
 Éditeur et visualiseur Markdown pour Linux, avec rendu HTML en temps réel, écrit en Python (PyQt6 + QWebEngine).
 
-![Version](https://img.shields.io/badge/version-3.3-blue)
+![Version](https://img.shields.io/badge/version-3.4-blue)
 
 ## Fonctionnalités
 
