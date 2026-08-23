@@ -17,7 +17,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import (
     QAction, QActionGroup, QKeySequence, QIcon, QPageLayout, QPageSize, QPainter,
     QTextCharFormat, QColor, QTextDocument, QSyntaxHighlighter, QPalette, QTextFormat,
-    QPixmap, QFont, QTextCursor, QDesktopServices,
+    QPixmap, QFont, QTextCursor, QDesktopServices, QFontDatabase,
 )
 from PyQt6.QtPdf import QPdfDocument
 from PyQt6.QtWidgets import (
@@ -42,7 +42,7 @@ from pygments.formatters import HtmlFormatter
 # ---------------------------------------------------------------------------
 
 MARKDOWN_EXTENSIONS = [
-    "tables", "fenced_code", "codehilite", "toc", "nl2br",
+    "tables", "fenced_code", "codehilite", "toc",
     "sane_lists", "smarty", "attr_list", "def_list",
     "footnotes", "admonition", "meta",
     "pymdownx.mark", "pymdownx.tilde",
@@ -93,7 +93,7 @@ _PYGMENTS_CSS_DARK  = HtmlFormatter(style="monokai").get_style_defs(".highlight"
 
 MAX_RECENT_FILES = 10
 
-APP_VERSION = "3.4"
+APP_VERSION = "3.5"
 APP_AUTHOR = "Michel Maillard"
 
 # ---------------------------------------------------------------------------
@@ -1717,8 +1717,8 @@ class MarkdownApp(QMainWindow):
         self._act_replace.triggered.connect(self._toggle_replace)
         self._act_customize_tb.triggered.connect(self._on_customize_toolbar)
         self._act_about.triggered.connect(self._on_about)
-        self._act_tutorial.triggered.connect(lambda: self._open_bundled_doc("tutoriel.md"))
-        self._act_md_reference.triggered.connect(lambda: self._open_bundled_doc("markdown-reference.md"))
+        self._act_tutorial.triggered.connect(lambda: self._open_bundled_doc("TUTORIEL.md"))
+        self._act_md_reference.triggered.connect(lambda: self._open_bundled_doc("MARKDOWN-REFERENCE.md"))
 
         self._act_bold.triggered.connect(self._editor.format_bold)
         self._act_italic.triggered.connect(self._editor.format_italic)
@@ -2784,8 +2784,25 @@ class MarkdownApp(QMainWindow):
 
     @staticmethod
     def _strip_meta_block(text):
+        """Retire le bloc de métadonnées en tête du document.
+
+        Deux formes sont reconnues : le bloc délimité par « --- », écrit par
+        l'application, et le bloc sans délimiteurs des documents antérieurs.
+        """
         lines = text.split("\n")
-        if not lines or not re.match(r"^\w[\w\s]*\s*:", lines[0]):
+        if not lines:
+            return text
+
+        if lines[0].strip() == "---":
+            for i in range(1, len(lines)):
+                if lines[i].strip() in ("---", "..."):
+                    rest = lines[i + 1:]
+                    if rest and not rest[0].strip():
+                        rest = rest[1:]      # ligne vide de séparation
+                    return "\n".join(rest)
+            return text          # délimiteur de fin absent : ne rien toucher
+
+        if not re.match(r"^\w[\w\s]*\s*:", lines[0]):
             return text
         for i, line in enumerate(lines):
             if not line.strip():
@@ -2888,7 +2905,8 @@ class MarkdownApp(QMainWindow):
         if not meta_lines:
             return
         body = self._strip_meta_block(source)
-        self._editor.setPlainText("\n".join(meta_lines) + "\n\n" + body)
+        block = "---\n" + "\n".join(meta_lines) + "\n---\n"
+        self._editor.setPlainText(block + "\n" + body)
         self._statusbar.showMessage("Métadonnées mises à jour.", 3000)
 
     @staticmethod
@@ -3194,6 +3212,14 @@ class MarkdownApp(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("MarkEdit")
+
+    # QtWebEngine initialise fontconfig depuis un de ses threads de démarrage,
+    # où l'analyse de la configuration XML plante par intermittence dans
+    # getenv() — d'où les erreurs de segmentation observées à l'ouverture d'un
+    # document. Interroger la liste des polices ici initialise fontconfig dans
+    # le thread principal ; l'initialisation ultérieure de WebEngine devient
+    # alors sans effet.
+    QFontDatabase.families()
 
     file_path = sys.argv[1] if len(sys.argv) > 1 else None
     window = MarkdownApp(file_path)

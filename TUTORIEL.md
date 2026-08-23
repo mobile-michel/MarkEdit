@@ -283,6 +283,7 @@ L'application mémorise automatiquement :
 | Citation | `> texte` |
 | Liste à puces | `- item` ou `* item` |
 | Liste numérotée | `1. item` |
+| Saut de ligne | deux espaces en fin de ligne |
 | Case à cocher | `- [ ] tâche` / `- [x] faite` |
 | Note de bas de page | `[^1]` / `[^1]: note` |
 | Ligne horizontale | `---` |

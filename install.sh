@@ -54,7 +54,7 @@ echo "✅ Application copiée"
 
 # Copier la documentation intégrée (menu Aide)
 echo "📋 Copie de la documentation..."
-cp "$(pwd)/tutoriel.md" "$(pwd)/markdown-reference.md" "$INSTALL_DIR/"
+cp "$(pwd)/TUTORIEL.md" "$(pwd)/MARKDOWN-REFERENCE.md" "$INSTALL_DIR/"
 echo "✅ Documentation copiée"
 
 # Installer l'icône dans le thème d'icônes de l'utilisateur

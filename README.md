@@ -2,7 +2,7 @@
 
 Éditeur et visualiseur Markdown pour Linux, avec rendu HTML en temps réel, écrit en Python (PyQt6 + QWebEngine).
 
-![Version](https://img.shields.io/badge/version-3.4-blue)
+![Version](https://img.shields.io/badge/version-3.5-blue)
 
 ## Fonctionnalités
 
@@ -16,7 +16,7 @@
 - **Recherche et remplacement**, y compris dans le rendu HTML
 - **Export** en HTML autonome et en PDF, ainsi que l'impression
 - **Coloration syntaxique** des blocs de code via Pygments
-- Prise en charge de tableaux, notes de bas de page, listes de définitions, attributs HTML, admonitions, texte surligné/barré, et plus — voir [markdown-reference.md](markdown-reference.md)
+- Prise en charge de tableaux, notes de bas de page, listes de définitions, attributs HTML, admonitions, texte surligné/barré, et plus — voir [MARKDOWN-REFERENCE.md](MARKDOWN-REFERENCE.md)
 
 ## Installation
 
@@ -44,8 +44,8 @@ Depuis le menu des applications (« MarkEdit »), ou en ligne de commande :
 
 ## Documentation
 
-- [tutoriel.md](tutoriel.md) — guide complet des fonctionnalités de l'application
-- [markdown-reference.md](markdown-reference.md) — référence de toutes les syntaxes Markdown prises en charge
+- [TUTORIEL.md](TUTORIEL.md) — guide complet des fonctionnalités de l'application
+- [MARKDOWN-REFERENCE.md](MARKDOWN-REFERENCE.md) — référence de toutes les syntaxes Markdown prises en charge
 
 Ces deux documents sont aussi accessibles directement depuis le menu **Aide** de l'application.
 

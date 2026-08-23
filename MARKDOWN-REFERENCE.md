@@ -30,7 +30,7 @@ Ce viewer se rapproche le plus de **Markdown Extra** (PHP Markdown Extra, Michel
 | Cases à cocher `[ ]` / `[x]`      | ✅        | ❌             | ✅           | ❌         | ✅     |
 | Blocs d'avertissement (admonition) | ✅        | ❌             | ❌           | ❌         | ❌     |
 | Table des matières `[TOC]`         | ✅        | ✅             | ❌           | ❌         | ✅     |
-| Sauts de ligne → `<br>`            | ✅        | ❌             | ✅           | ❌         | ❌     |
+| Sauts de ligne → `<br>`            | ❌        | ❌             | ✅           | ❌         | ❌     |
 | Typographie (`--`, `"..."`)        | ✅        | ❌             | ❌           | ❌         | ✅     |
 | Texte surligné `==texte==`         | ✅        | ❌             | ❌           | ❌         | ✅     |
 | ~~Texte barré~~                    | ✅        | ❌             | ✅           | ❌         | ✅     |
@@ -76,7 +76,6 @@ Ce viewer se rapproche le plus de **Markdown Extra** (PHP Markdown Extra, Michel
 | `fenced_code`   | Blocs de code délimités par ` ``` `               |
 | `codehilite`    | Coloration syntaxique (Pygments)                  |
 | `toc`           | Table des matières automatique                    |
-| `nl2br`         | Saut de ligne = `<br>` (comme GFM)                |
 | `sane_lists`    | Listes cohérentes (mélange ordonné/non-ordonné)   |
 | `smarty`        | Guillemets typographiques et tirets               |
 | `attr_list`     | Attributs HTML sur les éléments (`{#id .classe}`) |
@@ -115,6 +114,17 @@ En plus des extensions, l'application convertit automatiquement les **cases à c
 ```
 
 *italique*, **gras**, ***gras italique***, ~~texte barré~~, ==texte surligné==
+
+### Sauts de ligne
+
+Un simple retour à la ligne est ignoré au rendu : le texte se poursuit sur la
+même ligne. Pour forcer un saut de ligne, terminer la ligne par **deux
+espaces**, ou laisser une ligne vide pour créer un nouveau paragraphe.
+
+```
+Première ligne␣␣
+Deuxième ligne
+```
 
 ### Liens et images
 
