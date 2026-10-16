@@ -7,7 +7,7 @@ Description: Documentation complète de toutes les fonctionnalités de l'applica
 
 # Guide complet — MarkEdit
 
-MarkEdit est un éditeur et visualiseur de fichiers Markdown avec rendu HTML en temps réel, gestion des métadonnées, export et impression.
+MarkEdit est un éditeur et visualiseur de fichiers Markdown avec rendu HTML en temps réel, affichage des métadonnées, export et impression.
 
 ## Modes d'affichage
 
@@ -15,9 +15,10 @@ L'application propose trois modes accessibles depuis la barre d'outils ou le men
 
 | Mode | Raccourci | Description |
 |------|-----------|-------------|
-| Affichage | `F5` | Rendu HTML uniquement |
-| Édition | `F6` | Éditeur de texte uniquement |
-| Partagé | `F7` | Éditeur et rendu côte à côte |
+| Affichage / Édition | `F5` | Bascule entre le rendu HTML seul et l'éditeur seul |
+| Partagé / Affichage | `F6` | Bascule entre l'éditeur et le rendu côte à côte, et le rendu seul |
+
+`F5` et `F6` fonctionnent comme des interrupteurs, avec un seul bouton chacun dans la barre d'outils. Celui de `F5` change d'icône et de libellé pour annoncer le mode vers lequel il fait passer ; depuis le mode Partagé, il ramène en Affichage. Celui de `F6` reste enfoncé tant que le mode Partagé est actif, et un nouvel appui revient en Affichage.
 
 En mode **Partagé**, le rendu se met à jour automatiquement 300 ms après chaque frappe.
 
@@ -82,7 +83,7 @@ La ligne de remplacement apparaît sous la barre de recherche :
 - **Remplacer** — remplace l'occurrence courante
 - **Tout remplacer** — remplace toutes les occurrences dans le document
 
-## Panneau latéral `F8`
+## Panneau latéral `F7`
 
 Le panneau latéral (ancrable à gauche ou à droite) regroupe deux sections :
 
@@ -202,13 +203,15 @@ En mode Affichage ou Partagé, cliquer sur une case à cocher d'une liste de tâ
 
 ## Métadonnées
 
-Le format de métadonnées est celui de l'extension `meta` de Python-Markdown : des lignes `Clé: valeur` en tête du fichier, avant tout contenu, séparées du reste par une ligne vide.
+Les métadonnées sont gérées par **MarkNotes** : MarkEdit se contente de les lire et de les afficher dans le panneau latéral (`F7`), sans permettre de les modifier.
+
+Elles forment un bloc de lignes `Clé: valeur` en tête du fichier, entre deux lignes `---`. La forme sans délimiteurs, séparée du contenu par une ligne vide, reste reconnue. Le bloc n'apparaît jamais dans le rendu.
 
 ### Champs reconnus et ordre d'affichage
 
 | Champ | Libellé affiché | Description |
 |-------|------------------|-------------|
-| `type` | Type | note / tâche / journal / référence (liste fermée) |
+| `type` | Type | note / tâche / journal / référence |
 | `title` | Titre | Titre du document |
 | `description` | Description | Résumé en une phrase |
 | `author` | Auteur | Nom de l'auteur |
@@ -221,6 +224,7 @@ L'ancien champ `updated` reste reconnu et affiché sous le même libellé « Mis
 ### Exemple de bloc de métadonnées
 
 ```
+---
 Type: note
 Title: Mon document
 Description: Résumé du contenu.
@@ -228,28 +232,11 @@ Author: Prénom Nom
 Tags: rapport, projet, draft
 Created: 2026-01-15
 Timestamp: 2026-07-01
+---
 
 # Premier titre
 ...
 ```
-
-### Modifier les métadonnées `Ctrl+Shift+M`
-
-Ouvre un formulaire pré-rempli, dans l'ordre du tableau ci-dessus :
-
-| Champ | Source par défaut |
-|-------|-------------------|
-| Type | Liste déroulante fermée (note / tâche / journal / référence), vide par défaut |
-| Titre | Nom du fichier (reformaté) |
-| Description | Vide |
-| Auteur | Dernier auteur saisi ou `git config user.name` |
-| Tags | Vide (virgule-séparés) |
-| Créé le | Date de création du fichier (`st_birthtime` si disponible, sinon date de modification) |
-| Mis à jour le | Date de dernière modification du fichier (`st_mtime`), ou valeur existante de `timestamp`/`updated` |
-
-Si un bloc de métadonnées existe déjà, ses valeurs sont reprises dans le formulaire. À la validation, il est remplacé.
-
-L'auteur saisi est mémorisé pour les sessions suivantes.
 
 ## Menu Aide
 
@@ -265,7 +252,6 @@ L'application mémorise automatiquement :
 - Position du séparateur en mode Partagé
 - Niveau de zoom
 - Thème et largeur de contenu sélectionnés
-- Dernier auteur saisi dans le formulaire de métadonnées
 - Liste des fichiers récents
 
 ## Syntaxe Markdown supportée
@@ -281,7 +267,7 @@ L'application mémorise automatiquement :
 | Image | `![alt](url)` |
 | Tableau | Syntaxe GFM (pipes) |
 | Citation | `> texte` |
-| Liste à puces | `- item` ou `* item` |
+| Liste à puces | `- item` ou `* item` (peut suivre un paragraphe sans ligne vide) |
 | Liste numérotée | `1. item` |
 | Saut de ligne | deux espaces en fin de ligne |
 | Case à cocher | `- [ ] tâche` / `- [x] faite` |
@@ -316,13 +302,11 @@ La coloration syntaxique des blocs de code utilise **Pygments** et supporte des 
 | `Ctrl+Shift+7` | Liste numérotée |
 | `Ctrl+Shift+T` | Liste de tâches |
 | `Ctrl+Shift+9` | Citation |
-| `F5` | Mode Affichage |
-| `F6` | Mode Édition |
-| `F7` | Mode Partagé |
-| `F8` | Panneau latéral |
+| `F5` | Basculer Affichage / Édition |
+| `F6` | Basculer Partagé / Affichage |
+| `F7` | Panneau latéral |
 | `F9` | Thème suivant |
 | `F10` | Largeur suivante |
-| `Ctrl+Shift+M` | Modifier les métadonnées |
 | `Ctrl++` | Zoom avant |
 | `Ctrl+-` | Zoom arrière |
 | `Ctrl+0` | Zoom normal |

@@ -6,7 +6,6 @@ import os
 import re
 import html as html_lib
 import tempfile
-import subprocess
 import urllib.parse
 from datetime import date, datetime
 
@@ -34,8 +33,57 @@ from PyQt6.QtWebEngineCore import QWebEnginePage
 from PyQt6.QtWebChannel import QWebChannel
 
 import markdown
+from markdown.extensions import Extension
 from markdown.extensions.toc import slugify as _toc_slugify
+from markdown.preprocessors import Preprocessor
 from pygments.formatters import HtmlFormatter
+
+
+# ---------------------------------------------------------------------------
+# Listes collées au paragraphe précédent
+# ---------------------------------------------------------------------------
+
+class _ListAfterParagraph(Preprocessor):
+    """Insère la ligne vide qu'attend Python-Markdown devant une liste écrite
+    juste sous un paragraphe. GitHub et CommonMark reconnaissent la liste sans
+    cette ligne ; Python-Markdown la rattache au paragraphe.
+
+    Comme pour CommonMark, seules les listes numérotées commençant par 1
+    interrompent un paragraphe : « il est né en\\n1984. » reste du texte.
+    Les marqueurs que Python-Markdown ignore de toute façon, comme « 1) »,
+    sont laissés tels quels : insérer une ligne vide devant eux ne créerait
+    aucune liste et couperait le paragraphe en deux.
+    """
+
+    # Début de liste : puce, ou numérotation commençant à 1.
+    _ITEM = re.compile(r"^ {0,3}(?:[-*+]|1\.)[ \t]+\S")
+    # Ligne horizontale « - - - » : une liste ne doit pas en naître.
+    _RULE = re.compile(r"^ {0,3}([-*_])[ \t]*(?:\1[ \t]*){2,}$")
+    # Ligne qu'une liste peut interrompre : ni liste, ni titre, ni citation,
+    # ni ligne indentée (bloc de code ou contenu imbriqué). Une ligne de
+    # tableau en fait partie, sinon la liste qui la suit serait avalée comme
+    # une rangée supplémentaire.
+    _PARAGRAPH = re.compile(
+        r"^ {0,3}(?![-*+][ \t])(?!\d+[.)][ \t])(?![#>])(?!:[ \t])\S"
+    )
+
+    def run(self, lines):
+        resultat = []
+        for ligne in lines:
+            if (resultat
+                    and self._ITEM.match(ligne)
+                    and not self._RULE.match(ligne)
+                    and self._PARAGRAPH.match(resultat[-1])):
+                resultat.append("")
+            resultat.append(ligne)
+        return resultat
+
+
+class ListAfterParagraphExtension(Extension):
+    def extendMarkdown(self, md):
+        # Priorité sous celle de fenced_code (25) : le contenu des blocs de
+        # code est déjà mis de côté et ne peut donc pas être altéré.
+        md.preprocessors.register(_ListAfterParagraph(md), "list_after_paragraph", 24)
 
 # ---------------------------------------------------------------------------
 # Constantes
@@ -46,6 +94,7 @@ MARKDOWN_EXTENSIONS = [
     "sane_lists", "smarty", "attr_list", "def_list",
     "footnotes", "admonition", "meta",
     "pymdownx.mark", "pymdownx.tilde",
+    ListAfterParagraphExtension(),
 ]
 
 MARKDOWN_EXT_CONFIGS = {
@@ -65,7 +114,6 @@ METADATA_LABELS = {
     "author": "Auteur", "tags": "Tags", "created": "Créé",
     "timestamp": "Mis à jour", "updated": "Mis à jour",
 }
-METADATA_TYPES = ["note", "tâche", "journal", "référence"]
 
 # Langages proposés pour l'insertion d'un bloc de code (libellé, identifiant fencé).
 _RE_SOURCE_TASK = re.compile(r'^(\s*[-*+]\s+)\[([ xX])\](.*)$', re.MULTILINE)
@@ -93,7 +141,7 @@ _PYGMENTS_CSS_DARK  = HtmlFormatter(style="monokai").get_style_defs(".highlight"
 
 MAX_RECENT_FILES = 10
 
-APP_VERSION = "3.5"
+APP_VERSION = "3.6"
 APP_AUTHOR = "Michel Maillard"
 
 # ---------------------------------------------------------------------------
@@ -1383,32 +1431,22 @@ class MarkdownApp(QMainWindow):
         # --- Affichage ---
         view_menu = bar.addMenu("&Affichage")
 
-        self._act_view = QAction("Mode &Affichage", self)
-        self._act_view.setShortcut(QKeySequence("F5"))
-        self._act_view.setCheckable(True)
-        self._act_view.setIcon(_icon("view-preview", QStyle.StandardPixmap.SP_FileDialogContentsView))
-        self._act_view.setObjectName("view")
-        view_menu.addAction(self._act_view)
-
-        self._act_edit = QAction("Mode &Édition", self)
-        self._act_edit.setShortcut(QKeySequence("F6"))
-        self._act_edit.setCheckable(True)
-        self._act_edit.setIcon(_icon("document-edit", QStyle.StandardPixmap.SP_FileIcon))
-        self._act_edit.setObjectName("edit")
-        view_menu.addAction(self._act_edit)
+        # Affichage et Édition partagent une seule action qui bascule de l'un à
+        # l'autre ; son libellé et son icône annoncent le mode de destination.
+        self._icon_view = _icon("view-preview", QStyle.StandardPixmap.SP_FileDialogContentsView)
+        self._icon_edit = _icon("document-edit", QStyle.StandardPixmap.SP_FileIcon)
+        self._act_mode_toggle = QAction(self)
+        self._act_mode_toggle.setShortcut(QKeySequence("F5"))
+        self._act_mode_toggle.setObjectName("mode")
+        view_menu.addAction(self._act_mode_toggle)
+        self._update_mode_toggle()
 
         self._act_split = QAction("Mode &Partagé", self)
-        self._act_split.setShortcut(QKeySequence("F7"))
+        self._act_split.setShortcut(QKeySequence("F6"))
         self._act_split.setCheckable(True)
         self._act_split.setIcon(_icon("view-split-left-right", QStyle.StandardPixmap.SP_FileDialogDetailedView))
         self._act_split.setObjectName("split")
         view_menu.addAction(self._act_split)
-
-        self._mode_group = QActionGroup(self)
-        self._mode_group.addAction(self._act_view)
-        self._mode_group.addAction(self._act_edit)
-        self._mode_group.addAction(self._act_split)
-        self._mode_group.setExclusive(True)
 
         view_menu.addSeparator()
 
@@ -1433,7 +1471,7 @@ class MarkdownApp(QMainWindow):
         view_menu.addSeparator()
 
         self._act_toc = QAction("Panneau &latéral", self)
-        self._act_toc.setShortcut(QKeySequence("F8"))
+        self._act_toc.setShortcut(QKeySequence("F7"))
         self._act_toc.setCheckable(True)
         self._act_toc.setIcon(_icon("view-list-tree", QStyle.StandardPixmap.SP_FileDialogListView))
         self._act_toc.setObjectName("toc")
@@ -1448,14 +1486,6 @@ class MarkdownApp(QMainWindow):
 
         # --- Outils ---
         tools_menu = bar.addMenu("&Outils")
-
-        self._act_gen_metadata = QAction("&Modifier les métadonnées…", self)
-        self._act_gen_metadata.setShortcut(QKeySequence("Ctrl+Shift+M"))
-        self._act_gen_metadata.setIcon(_icon("document-properties"))
-        self._act_gen_metadata.setObjectName("gen_metadata")
-        tools_menu.addAction(self._act_gen_metadata)
-
-        tools_menu.addSeparator()
 
         # Thèmes de présentation
         themes_menu = tools_menu.addMenu("&Thème")
@@ -1552,9 +1582,22 @@ class MarkdownApp(QMainWindow):
         "new", "open", "save", "---",
         "print", "---",
         "search", "---",
-        "view", "edit", "split", "---",
+        "mode", "split", "---",
         "dark",
     ]
+
+    def _toolbar_items(self, settings):
+        """Éléments enregistrés de la barre d'outils. Les anciens boutons
+        « view » et « edit » deviennent l'interrupteur « mode », à la place
+        du premier des deux."""
+        items, has_mode = [], False
+        for name in settings.value("toolbarItems", self._DEFAULT_TOOLBAR):
+            if name in ("view", "edit", "mode"):
+                if has_mode:
+                    continue
+                name, has_mode = "mode", True
+            items.append(name)
+        return items
 
     def _all_toolbar_actions(self):
         """Dictionnaire nom → QAction pour toutes les actions plaçables en toolbar."""
@@ -1569,14 +1612,12 @@ class MarkdownApp(QMainWindow):
             "print":        self._act_print,
             "search":       self._act_search,
             "replace":      self._act_replace,
-            "view":         self._act_view,
-            "edit":         self._act_edit,
+            "mode":         self._act_mode_toggle,
             "split":        self._act_split,
             "zoom_in":      self._act_zoom_in,
             "zoom_out":     self._act_zoom_out,
             "zoom_reset":   self._act_zoom_reset,
             "toc":          self._act_toc,
-            "gen_metadata": self._act_gen_metadata,
             "cycle_theme":  self._act_cycle_theme,
             "cycle_width":  self._act_cycle_width,
             "bold":         self._act_bold,
@@ -1671,7 +1712,7 @@ class MarkdownApp(QMainWindow):
     def _rebuild_toolbar(self):
         self._toolbar.clear()
         settings = QSettings("maillard.li", "MarkdownViewer")
-        items = settings.value("toolbarItems", self._DEFAULT_TOOLBAR)
+        items = self._toolbar_items(settings)
         actions = self._all_toolbar_actions()
         for name in items:
             if name == "---":
@@ -1700,9 +1741,8 @@ class MarkdownApp(QMainWindow):
         self._act_print.triggered.connect(self._on_print)
         self._act_quit.triggered.connect(self.close)
 
-        self._act_view.triggered.connect(lambda: self._switch_mode("view"))
-        self._act_edit.triggered.connect(lambda: self._switch_mode("edit"))
-        self._act_split.triggered.connect(lambda: self._switch_mode("split"))
+        self._act_mode_toggle.triggered.connect(self._toggle_view_edit)
+        self._act_split.triggered.connect(self._toggle_split)
 
         self._act_zoom_in.triggered.connect(self._on_zoom_in)
         self._act_zoom_out.triggered.connect(self._on_zoom_out)
@@ -1711,7 +1751,6 @@ class MarkdownApp(QMainWindow):
         self._act_cycle_theme.triggered.connect(self._cycle_theme)
         self._act_cycle_width.triggered.connect(self._cycle_width)
 
-        self._act_gen_metadata.triggered.connect(self._on_generate_metadata)
 
         self._act_search.triggered.connect(self._toggle_search)
         self._act_replace.triggered.connect(self._toggle_replace)
@@ -2249,24 +2288,52 @@ class MarkdownApp(QMainWindow):
             self._render()
             self._web_view.setVisible(True)
             self._editor_container.setVisible(False)
-            self._act_view.setChecked(True)
             self._statusbar.showMessage("Mode : Affichage")
         elif mode == "edit":
             self._render_timer.stop()
             self._web_view.setVisible(False)
             self._editor_container.setVisible(True)
-            self._act_edit.setChecked(True)
             self._statusbar.showMessage("Mode : Édition")
             self._editor.setFocus()
         else:  # split
             self._render()
             self._web_view.setVisible(True)
             self._editor_container.setVisible(True)
-            self._act_split.setChecked(True)
             self._statusbar.showMessage("Mode : Partagé")
             self._editor.setFocus()
+        self._update_mode_toggle()
+        self._update_split_toggle()
         if self._search_bar.isVisible() and self._search_input.text():
             self._on_search_text_changed()
+
+    def _toggle_view_edit(self):
+        """F5 : bascule entre Affichage et Édition ; depuis le mode partagé,
+        passe en Affichage."""
+        self._switch_mode("edit" if self._mode == "view" else "view")
+
+    def _toggle_split(self):
+        """F6 : bascule entre le mode Partagé et le mode Affichage."""
+        self._switch_mode("view" if self._mode == "split" else "split")
+
+    def _update_split_toggle(self):
+        """Le bouton Partagé reste enfoncé tant que le mode est actif, et son
+        infobulle annonce l'effet du prochain appui."""
+        act = self._act_split
+        active = self._mode == "split"
+        act.setChecked(active)
+        action = "Quitter le mode Partagé" if active else "Passer en mode Partagé"
+        act.setToolTip(f"{action} ({act.shortcut().toString()})")
+
+    def _update_mode_toggle(self):
+        """L'interrupteur annonce le mode vers lequel il fait basculer."""
+        if self._mode == "view":
+            text, icon = "Passer en mode &Édition", self._icon_edit
+        else:
+            text, icon = "Passer en mode &Affichage", self._icon_view
+        act = self._act_mode_toggle
+        act.setText(text)
+        act.setIcon(icon)
+        act.setToolTip(f"{text.replace('&', '')} ({act.shortcut().toString()})")
 
     # -----------------------------------------------------------------------
     # Thèmes (dont le thème sombre)
@@ -2768,147 +2835,6 @@ class MarkdownApp(QMainWindow):
     # Métadonnées
     # -----------------------------------------------------------------------
 
-    def _default_author(self):
-        settings = QSettings("maillard.li", "MarkdownViewer")
-        saved = settings.value("lastAuthor", "")
-        if saved:
-            return saved
-        try:
-            result = subprocess.run(
-                ["git", "config", "user.name"],
-                capture_output=True, text=True, timeout=2,
-            )
-            return result.stdout.strip()
-        except Exception:
-            return ""
-
-    @staticmethod
-    def _strip_meta_block(text):
-        """Retire le bloc de métadonnées en tête du document.
-
-        Deux formes sont reconnues : le bloc délimité par « --- », écrit par
-        l'application, et le bloc sans délimiteurs des documents antérieurs.
-        """
-        lines = text.split("\n")
-        if not lines:
-            return text
-
-        if lines[0].strip() == "---":
-            for i in range(1, len(lines)):
-                if lines[i].strip() in ("---", "..."):
-                    rest = lines[i + 1:]
-                    if rest and not rest[0].strip():
-                        rest = rest[1:]      # ligne vide de séparation
-                    return "\n".join(rest)
-            return text          # délimiteur de fin absent : ne rien toucher
-
-        if not re.match(r"^\w[\w\s]*\s*:", lines[0]):
-            return text
-        for i, line in enumerate(lines):
-            if not line.strip():
-                return "\n".join(lines[i + 1:])
-        return text
-
-    def _on_generate_metadata(self):
-        source = self._editor.toPlainText()
-        md_parser = markdown.Markdown(extensions=["meta"])
-        md_parser.convert(source)
-        existing = md_parser.Meta
-
-        def _get(*keys, default=""):
-            for key in keys:
-                vals = existing.get(key, [])
-                if vals:
-                    return ", ".join(v.strip() for v in vals)
-            return default
-
-        if self._current_file:
-            base = os.path.splitext(os.path.basename(self._current_file))[0]
-            default_title = base.replace("-", " ").replace("_", " ").title()
-        else:
-            default_title = ""
-
-        default_created = date.today().isoformat()
-        default_timestamp = date.today().isoformat()
-        if self._current_file and os.path.exists(self._current_file):
-            st = os.stat(self._current_file)
-            default_timestamp = datetime.fromtimestamp(st.st_mtime).date().isoformat()
-            try:
-                default_created = datetime.fromtimestamp(st.st_birthtime).date().isoformat()
-            except AttributeError:
-                default_created = default_timestamp
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle("Modifier les métadonnées")
-        dlg.setMinimumWidth(440)
-        vl = QVBoxLayout(dlg)
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
-        vl.addLayout(form)
-
-        f_type = QComboBox()
-        f_type.setStyleSheet(
-            "QComboBox QAbstractItemView { border: 1px solid #d0d0d0; }"
-        )
-        f_type.addItem("sélectionner…", "")
-        italic_font = QFont()
-        italic_font.setItalic(True)
-        f_type.setItemData(0, italic_font, Qt.ItemDataRole.FontRole)
-        for t in METADATA_TYPES:
-            f_type.addItem(t.capitalize(), t)
-        existing_type = _get("type").strip().lower()
-        idx = f_type.findData(existing_type)
-        f_type.setCurrentIndex(idx if idx >= 0 else 0)
-
-        f_title       = QLineEdit(_get("title", default=default_title))
-        f_description = QLineEdit(_get("description"))
-        f_description.setPlaceholderText("(optionnel)")
-        f_author      = QLineEdit(_get("author", default=self._default_author()))
-        f_tags        = QLineEdit(_get("tags"))
-        f_tags.setPlaceholderText("tag1, tag2, tag3")
-        f_created     = QLineEdit(_get("created", default=default_created))
-        f_timestamp   = QLineEdit(_get("timestamp", "updated", default=default_timestamp))
-
-        form.addRow("Type :",          f_type)
-        form.addRow("Titre :",         f_title)
-        form.addRow("Description :",   f_description)
-        form.addRow("Auteur :",        f_author)
-        form.addRow("Tags :",          f_tags)
-        form.addRow("Créé le :",       f_created)
-        form.addRow("Mis à jour le :", f_timestamp)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        buttons.accepted.connect(dlg.accept)
-        buttons.rejected.connect(dlg.reject)
-        vl.addWidget(buttons)
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        author_val = f_author.text().strip()
-        if author_val:
-            QSettings("maillard.li", "MarkdownViewer").setValue("lastAuthor", author_val)
-
-        fields = [
-            ("Type",        f_type.currentData() or ""),
-            ("Title",       f_title.text().strip()),
-            ("Description", f_description.text().strip()),
-            ("Author",      author_val),
-            ("Tags",        f_tags.text().strip()),
-            ("Created",     f_created.text().strip()),
-            ("Timestamp",   f_timestamp.text().strip()),
-        ]
-        meta_lines = [f"{k}: {v}" for k, v in fields if v]
-        if not meta_lines:
-            return
-        body = self._strip_meta_block(source)
-        block = "---\n" + "\n".join(meta_lines) + "\n---\n"
-        self._editor.setPlainText(block + "\n" + body)
-        self._statusbar.showMessage("Métadonnées mises à jour.", 3000)
-
     @staticmethod
     def _split_meta_values(values):
         tokens = []
@@ -2971,7 +2897,7 @@ class MarkdownApp(QMainWindow):
 
     def _on_customize_toolbar(self):
         settings = QSettings("maillard.li", "MarkdownViewer")
-        current_items = list(settings.value("toolbarItems", self._DEFAULT_TOOLBAR))
+        current_items = self._toolbar_items(settings)
         all_actions = self._all_toolbar_actions()
 
         dlg = QDialog(self)

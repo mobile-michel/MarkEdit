@@ -149,6 +149,16 @@ ___
 
 ## Listes
 
+Une liste peut suivre directement un paragraphe, sans ligne vide de séparation, comme sur GitHub :
+
+```
+Mes courses :
+- pain
+- lait
+```
+
+Pour les listes numérotées, cette souplesse ne vaut que si la numérotation commence à `1`, afin qu'une phrase comme « il est né en » suivie de « 2. moitié du siècle » reste du texte. Ailleurs — notamment à l'intérieur d'une citation `>` —, la ligne vide reste nécessaire.
+
 ### Liste non ordonnée
 
 ```
@@ -395,7 +405,7 @@ Timestamp: 2026-07-01
 
 Le champ `updated` (ancien nom de `timestamp`) reste reconnu et affiché sous le même libellé « Mis à jour », pour les documents créés avant ce changement.
 
-Les métadonnées s'affichent, dans cet ordre, dans le panneau latéral de l'application (F8) et dans la boîte de dialogue **Outils → Modifier les métadonnées…** (`Ctrl+Shift+M`), qui permet de les créer ou de les éditer via un formulaire (le champ Type y est une liste déroulante fermée).
+Les métadonnées s'affichent, dans cet ordre, dans le panneau latéral de l'application (F7). Elles sont gérées par MarkNotes : MarkEdit les affiche sans permettre de les modifier.
 
 ---
 
@@ -463,10 +473,9 @@ Ces raccourcis de formatage entourent la sélection (ou l'insèrent au point du 
 
 | Raccourci          | Action                          |
 |--------------------|---------------------------------|
-| `F5`               | Mode Affichage                  |
-| `F6`               | Mode Édition                    |
-| `F7`               | Mode Partagé                    |
-| `F8`               | Afficher/masquer panneau latéral|
+| `F5`               | Basculer Affichage / Édition    |
+| `F6`               | Basculer Partagé / Affichage    |
+| `F7`               | Afficher/masquer panneau latéral|
 | `F9`               | Thème suivant (dont Sombre)     |
 | `F10`              | Largeur de contenu suivante     |
 | `Ctrl++`           | Zoom avant                      |
@@ -477,4 +486,3 @@ Ces raccourcis de formatage entourent la sélection (ou l'insèrent au point du 
 
 | Raccourci          | Action                          |
 |--------------------|---------------------------------|
-| `Ctrl+Shift+M`     | Modifier les métadonnées        |

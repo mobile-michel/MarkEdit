@@ -2,11 +2,11 @@
 
 Éditeur et visualiseur Markdown pour Linux, avec rendu HTML en temps réel, écrit en Python (PyQt6 + QWebEngine).
 
-![Version](https://img.shields.io/badge/version-3.5-blue)
+![Version](https://img.shields.io/badge/version-3.6-blue)
 
 ## Fonctionnalités
 
-- **Trois modes** : Affichage, Édition, Partagé (`F5` / `F6` / `F7`)
+- **Trois modes** : `F5` bascule Affichage / Édition, `F6` bascule Partagé / Affichage ; panneau latéral par `F7`
 - **Cinq thèmes de présentation** dont un thème Sombre, cycle rapide avec `F9`
 - **Largeurs de contenu** ajustables, cycle rapide avec `F10`
 - **Aide au formatage Markdown** en mode Édition : raccourcis clavier (gras, italique, liens, listes…), mini barre d'outils, continuation automatique des listes, auto-fermeture des paires et des balises HTML, blocs de code avec choix du langage, indentation automatique
