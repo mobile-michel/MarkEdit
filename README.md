@@ -27,9 +27,11 @@ cd MarkEdit
 ./install.sh
 ```
 
-Le script crée un environnement virtuel Python dédié, installe les dépendances (PyQt6, PyQt6-WebEngine, markdown, Pygments, pymdown-extensions), copie l'application et sa documentation, installe l'icône, et enregistre un lanceur dans le menu des applications.
+Le script crée un environnement virtuel Python dédié dans `~/venvs/markedit`, installe les dépendances (PyQt6, PyQt6-WebEngine, markdown, Pygments, pymdown-extensions), installe l'icône, enregistre un lanceur dans le menu des applications et associe MarkEdit aux fichiers Markdown.
 
-Pour désinstaller :
+L'application **n'est pas copiée** : le lanceur `~/.local/bin/markedit` l'exécute depuis le dépôt cloné. Une mise à jour se fait donc par un simple `git pull`, sans relancer le script. Le dépôt doit rester en place.
+
+Pour désinstaller — le lanceur, l'entrée de menu, les icônes et les associations ; ni le dépôt ni vos documents ne sont touchés :
 
 ```bash
 ./uninstall.sh
@@ -40,7 +42,7 @@ Pour désinstaller :
 Depuis le menu des applications (« MarkEdit »), ou en ligne de commande :
 
 ```bash
-/home/michel/.local/opt/MarkEdit/.venv/bin/python3 /home/michel/.local/opt/MarkEdit/markdown_app.py [fichier.md]
+markedit [fichier.md]
 ```
 
 ## Documentation
