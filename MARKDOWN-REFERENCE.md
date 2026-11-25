@@ -73,8 +73,8 @@ Ce viewer se rapproche le plus de **Markdown Extra** (PHP Markdown Extra, Michel
 | Extension       | Rôle                                              |
 |-----------------|---------------------------------------------------|
 | `tables`        | Tableaux GFM                                      |
-| `fenced_code`   | Blocs de code délimités par ` ``` `               |
-| `codehilite`    | Coloration syntaxique (Pygments)                  |
+| `pymdownx.superfences` | Blocs délimités, et blocs `mermaid` préservés |
+| `pymdownx.highlight` | Coloration syntaxique (Pygments)             |
 | `toc`           | Table des matières automatique                    |
 | `sane_lists`    | Listes cohérentes (mélange ordonné/non-ordonné)   |
 | `smarty`        | Guillemets typographiques et tirets               |
@@ -87,6 +87,22 @@ Ce viewer se rapproche le plus de **Markdown Extra** (PHP Markdown Extra, Michel
 | `pymdownx.tilde`| Texte barré `~~texte~~`                           |
 
 En plus des extensions, l'application convertit automatiquement les **cases à cocher** (`[ ]` / `[x]`) en listes de tâches interactives.
+
+### Diagrammes Mermaid
+
+Un bloc délimité portant le langage `mermaid` est rendu comme un diagramme :
+
+````
+```mermaid
+graph TD
+  A[Début] --> B{Choix}
+  B -->|oui| C[Fin]
+```
+````
+
+La bibliothèque est **embarquée dans l'application** : l'aperçu, l'impression et l'export PDF fonctionnent sans connexion, et attendent que les diagrammes soient tracés. En revanche, un document **exporté en HTML** charge Mermaid depuis un CDN, pour ne pas peser plusieurs mégaoctets : ses diagrammes demandent donc une connexion pour s'afficher.
+
+Le diagramme suit le thème de l'application : clair, ou sombre quand le thème Sombre est actif.
 
 ---
 
@@ -219,7 +235,7 @@ Terme 2
 Utilisez la fonction `print()` pour afficher du texte.
 ```
 
-### Bloc délimité avec coloration syntaxique (`fenced_code` + `codehilite`)
+### Bloc délimité avec coloration syntaxique (`superfences` + `highlight`)
 
 La langue est détectée automatiquement ou spécifiée explicitement :
 

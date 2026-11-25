@@ -29,14 +29,22 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 from PyQt6.QtWebChannel import QWebChannel
 
 import markdown
 from markdown.extensions import Extension
 from markdown.extensions.toc import slugify as _toc_slugify
 from markdown.preprocessors import Preprocessor
+from pymdownx.superfences import fence_div_format
 from pygments.formatters import HtmlFormatter
+
+# Diagrammes Mermaid : la bibliothèque est embarquée dans vendor/ pour que
+# l'aperçu fonctionne sans connexion. Les fichiers exportés en HTML pointent
+# vers le CDN, afin de ne pas peser 3,5 Mo chacun.
+MERMAID_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "vendor", "mermaid.min.js")
+MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +98,11 @@ class ListAfterParagraphExtension(Extension):
 # ---------------------------------------------------------------------------
 
 MARKDOWN_EXTENSIONS = [
-    "tables", "fenced_code", "codehilite", "toc",
+    # superfences remplace fenced_code : il sait laisser passer les blocs
+    # « mermaid » sans les colorer comme du code. Il s'appuie sur
+    # pymdownx.highlight plutôt que sur codehilite, qu'il court-circuite —
+    # sans quoi les blocs sans langage précisé perdraient leur coloration.
+    "tables", "pymdownx.superfences", "pymdownx.highlight", "toc",
     "sane_lists", "smarty", "attr_list", "def_list",
     "footnotes", "admonition", "meta",
     "pymdownx.mark", "pymdownx.tilde",
@@ -98,7 +110,12 @@ MARKDOWN_EXTENSIONS = [
 ]
 
 MARKDOWN_EXT_CONFIGS = {
-    "codehilite": {"css_class": "highlight", "guess_lang": True},
+    "pymdownx.superfences": {
+        "custom_fences": [
+            {"name": "mermaid", "class": "mermaid", "format": fence_div_format},
+        ],
+    },
+    "pymdownx.highlight": {"css_class": "highlight", "guess_lang": True},
     "pymdownx.tilde": {"subscript": False},
 }
 
@@ -141,7 +158,7 @@ _PYGMENTS_CSS_DARK  = HtmlFormatter(style="monokai").get_style_defs(".highlight"
 
 MAX_RECENT_FILES = 10
 
-APP_VERSION = "3.6"
+APP_VERSION = "3.7"
 APP_AUTHOR = "Michel Maillard"
 
 # ---------------------------------------------------------------------------
@@ -471,8 +488,24 @@ if (typeof qt !== 'undefined' && qt.webChannelTransport) {{
     }});
 }}
 </script>
+{mermaid}
 </body>
 </html>"""
+
+# Chargé puis exécuté seulement si le document contient un diagramme.
+# window.mermaidPret signale la fin du tracé : l'impression et l'export PDF
+# l'attendent, sinon les diagrammes sortiraient vides.
+MERMAID_SCRIPT = """<script src="{source}"></script>
+<script>
+window.mermaidPret = false;
+(function () {{
+    if (typeof mermaid === 'undefined') {{ window.mermaidPret = true; return; }}
+    mermaid.initialize({{ startOnLoad: false, theme: '{theme}' }});
+    mermaid.run({{ querySelector: '.mermaid' }})
+        .catch(function () {{}})
+        .finally(function () {{ window.mermaidPret = true; }});
+}})();
+</script>"""
 
 
 # ---------------------------------------------------------------------------
@@ -1152,6 +1185,11 @@ class MarkdownApp(QMainWindow):
         self._web_view = QWebEngineView()
         self._web_view.setPage(
             ExternalLinkPage(self._web_view, self._open_linked_markdown)
+        )
+        # Autorise la page rendue à charger la bibliothèque Mermaid embarquée,
+        # servie depuis vendor/ par une URL « file:// ».
+        self._web_view.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.LocalContentCanAccessFileUrls, True
         )
         self._task_bridge = TaskBridge(self._on_task_checkbox_toggled, self)
         self._web_channel = QWebChannel(self._web_view.page())
@@ -2187,7 +2225,10 @@ class MarkdownApp(QMainWindow):
         body = self._fix_internal_links(body, getattr(md, "toc_tokens", []))
         body = self._render_task_lists(body)
         body = self._wrap_tables(body)
-        html = HTML_TEMPLATE.format(css=self._get_css(), body=body)
+        html = HTML_TEMPLATE.format(
+            css=self._get_css(), body=body,
+            mermaid=self._mermaid_script(body, QUrl.fromLocalFile(MERMAID_LOCAL).toString()),
+        )
 
         base_url = QUrl("file:///")
         if self._current_file:
@@ -2276,7 +2317,19 @@ class MarkdownApp(QMainWindow):
         body = self._fix_internal_links(body, getattr(md, "toc_tokens", []))
         body = self._render_task_lists(body)
         body = self._wrap_tables(body)
-        return HTML_TEMPLATE.format(css=self._get_css(), body=body)
+        return HTML_TEMPLATE.format(
+            css=self._get_css(), body=body,
+            mermaid=self._mermaid_script(body, MERMAID_CDN),
+        )
+
+    def _mermaid_script(self, body, source):
+        """Script Mermaid, uniquement si le document contient un diagramme :
+        inutile de charger 3,5 Mo pour un document qui n'en a pas."""
+        if 'class="mermaid"' not in body:
+            return ""
+        return MERMAID_SCRIPT.format(
+            source=source, theme="dark" if self._dark_mode else "default",
+        )
 
     # -----------------------------------------------------------------------
     # Modes
@@ -2736,6 +2789,25 @@ class MarkdownApp(QMainWindow):
         self._web_view.page().loadFinished.connect(self._on_page_ready_for_export_pdf)
         self._render()
 
+    def _when_diagrams_drawn(self, suite, essais=40):
+        """Appelle `suite` une fois les diagrammes Mermaid tracés.
+
+        Le tracé est asynchrone : imprimer dès le chargement de la page
+        produirait des diagrammes vides. L'attente est plafonnée (environ
+        quatre secondes) pour ne jamais bloquer l'impression.
+        """
+        def verifier(pret):
+            if pret or essais <= 0:
+                suite()
+            else:
+                QTimer.singleShot(
+                    100, lambda: self._when_diagrams_drawn(suite, essais - 1)
+                )
+
+        self._web_view.page().runJavaScript(
+            "window.mermaidPret !== false", verifier
+        )
+
     def _on_page_ready_for_export_pdf(self, ok):
         try:
             self._web_view.page().loadFinished.disconnect(self._on_page_ready_for_export_pdf)
@@ -2744,6 +2816,9 @@ class MarkdownApp(QMainWindow):
         if not ok:
             QMessageBox.warning(self, "Export PDF", "Le rendu de la page a échoué.")
             return
+        self._when_diagrams_drawn(self._export_pdf_now)
+
+    def _export_pdf_now(self):
         layout = QPageLayout(
             QPageSize(QPageSize.PageSizeId.A4),
             QPageLayout.Orientation.Portrait,
@@ -2778,6 +2853,9 @@ class MarkdownApp(QMainWindow):
         if not ok:
             QMessageBox.warning(self, "Impression", "Le rendu de la page a échoué.")
             return
+        self._when_diagrams_drawn(self._print_now)
+
+    def _print_now(self):
         layout = QPageLayout(
             QPageSize(QPageSize.PageSizeId.A4),
             QPageLayout.Orientation.Portrait,

@@ -2,7 +2,7 @@
 
 Éditeur et visualiseur Markdown pour Linux, avec rendu HTML en temps réel, écrit en Python (PyQt6 + QWebEngine).
 
-![Version](https://img.shields.io/badge/version-3.6-blue)
+![Version](https://img.shields.io/badge/version-3.7-blue)
 
 ## Fonctionnalités
 
@@ -10,11 +10,12 @@
 - **Cinq thèmes de présentation** dont un thème Sombre, cycle rapide avec `F9`
 - **Largeurs de contenu** ajustables, cycle rapide avec `F10`
 - **Aide au formatage Markdown** en mode Édition : raccourcis clavier (gras, italique, liens, listes…), mini barre d'outils, continuation automatique des listes, auto-fermeture des paires et des balises HTML, blocs de code avec choix du langage, indentation automatique
+- **Diagrammes Mermaid** dans les blocs ` ```mermaid `, rendus hors ligne
 - **Cases à cocher interactives** dans les listes de tâches, cliquables directement en mode Affichage
-- **Métadonnées** en tête de document (type, titre, description, auteur, tags, dates), éditables via un formulaire dédié et affichées dans un panneau latéral
+- **Métadonnées** en tête de document (type, titre, description, auteur, tags, dates), affichées dans le panneau latéral — leur édition revient à MarkNotes
 - **Table des matières** générée automatiquement, navigable depuis le panneau latéral
 - **Recherche et remplacement**, y compris dans le rendu HTML
-- **Export** en HTML autonome et en PDF, ainsi que l'impression
+- **Export** en HTML et en PDF, ainsi que l'impression (les diagrammes d'un HTML exporté sont chargés depuis un CDN)
 - **Coloration syntaxique** des blocs de code via Pygments
 - Prise en charge de tableaux, notes de bas de page, listes de définitions, attributs HTML, admonitions, texte surligné/barré, et plus — voir [MARKDOWN-REFERENCE.md](MARKDOWN-REFERENCE.md)
 

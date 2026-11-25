@@ -268,6 +268,7 @@ L'application mémorise automatiquement :
 | Tableau | Syntaxe GFM (pipes) |
 | Citation | `> texte` |
 | Liste à puces | `- item` ou `* item` (peut suivre un paragraphe sans ligne vide) |
+| Diagramme | bloc ` ```mermaid ` (voir la référence Markdown) |
 | Liste numérotée | `1. item` |
 | Saut de ligne | deux espaces en fin de ligne |
 | Case à cocher | `- [ ] tâche` / `- [x] faite` |
